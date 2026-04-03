@@ -214,7 +214,7 @@ function loadSessionDetail(sessionId, project) {
           const role = entry.payload.role;
           if (role === 'user' || role === 'assistant') {
             const content = extractContent(entry.payload.content);
-            if (content && !content.startsWith('<permissions') && !content.startsWith('<environment_context') && !content.startsWith('<collaboration_mode')) {
+            if (content && !isSystemMessage(content)) {
               messages.push({ role: role, content: content.slice(0, 2000), uuid: '' });
             }
           }
@@ -370,6 +370,21 @@ function findSessionFile(sessionId, project) {
   return null;
 }
 
+function isSystemMessage(text) {
+  if (!text) return true;
+  var t = text.trim();
+  if (t === 'exit' || t === 'quit' || t === '/exit') return true;
+  if (t.startsWith('<permissions')) return true;
+  if (t.startsWith('<environment_context')) return true;
+  if (t.startsWith('<collaboration_mode')) return true;
+  if (t.startsWith('# AGENTS.md')) return true;
+  if (t.startsWith('<INSTRUCTIONS>')) return true;
+  // Codex developer role system prompts
+  if (t.startsWith('You are Codex')) return true;
+  if (t.startsWith('Filesystem sandboxing')) return true;
+  return false;
+}
+
 function extractContent(raw) {
   if (!raw) return '';
   if (typeof raw === 'string') return raw;
@@ -410,7 +425,7 @@ function getSessionPreview(sessionId, project, limit) {
           if (role === 'user' || role === 'assistant') {
             const content = extractContent(entry.payload.content);
             // Skip system-like messages
-            if (content && !content.startsWith('<permissions') && !content.startsWith('<environment_context') && !content.startsWith('<collaboration_mode')) {
+            if (content && !isSystemMessage(content)) {
               messages.push({ role: role, content: content.slice(0, 300) });
             }
           }

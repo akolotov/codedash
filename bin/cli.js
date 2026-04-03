@@ -57,6 +57,53 @@ switch (command) {
     break;
   }
 
+  case 'update':
+  case 'upgrade': {
+    const { execSync: execU } = require('child_process');
+    console.log('\n  \x1b[36m\x1b[1mUpdating codedash-app...\x1b[0m\n');
+    try {
+      execU('npm i -g codedash-app@latest', { stdio: 'inherit' });
+      const newPkg = require('../package.json');
+      console.log(`\n  \x1b[32mUpdated to v${newPkg.version}!\x1b[0m`);
+      console.log('  Run \x1b[2mcodedash restart\x1b[0m to apply.\n');
+    } catch (e) {
+      console.error('  \x1b[31mUpdate failed.\x1b[0m Try: npm i -g codedash-app@latest\n');
+    }
+    break;
+  }
+
+  case 'restart': {
+    const { execSync } = require('child_process');
+    const portArg = args.find(a => a.startsWith('--port='));
+    const port = portArg ? parseInt(portArg.split('=')[1]) : DEFAULT_PORT;
+    console.log(`\n  Stopping codedash on port ${port}...`);
+    try {
+      execSync(`lsof -ti:${port} | xargs kill -9 2>/dev/null`, { stdio: 'pipe' });
+      console.log('  Stopped.');
+    } catch {
+      console.log('  No running instance found.');
+    }
+    setTimeout(() => {
+      console.log('  Starting...\n');
+      const noBrowser = args.includes('--no-browser');
+      startServer(port, !noBrowser);
+    }, 500);
+    break;
+  }
+
+  case 'stop': {
+    const { execSync: execS } = require('child_process');
+    const pArg = args.find(a => a.startsWith('--port='));
+    const p = pArg ? parseInt(pArg.split('=')[1]) : DEFAULT_PORT;
+    try {
+      execS(`lsof -ti:${p} | xargs kill -9 2>/dev/null`, { stdio: 'pipe' });
+      console.log(`\n  codedash stopped (port ${p})\n`);
+    } catch {
+      console.log(`\n  No codedash running on port ${p}\n`);
+    }
+    break;
+  }
+
   case 'export': {
     const outPath = args[1] || `codedash-export-${new Date().toISOString().slice(0,10)}.tar.gz`;
     exportArchive(outPath);
@@ -90,6 +137,9 @@ switch (command) {
 
   \x1b[1mUsage:\x1b[0m
     codedash run [port] [--no-browser]   Start the dashboard server
+    codedash update                      Update to latest version
+    codedash restart [--port=N]          Restart the server
+    codedash stop [--port=N]             Stop the server
     codedash list [limit]                List sessions in terminal
     codedash stats                       Show session statistics
     codedash export [file.tar.gz]        Export all sessions to archive

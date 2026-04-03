@@ -1373,10 +1373,9 @@ async function checkForUpdates() {
 }
 
 function copyUpdate() {
-  var banner = document.getElementById('updateBanner');
-  var cmd = banner ? banner.dataset.cmd : 'npm update -g codedash-app';
+  var cmd = 'codedash update && codedash restart';
   navigator.clipboard.writeText(cmd).then(function() {
-    showToast('Copied: ' + cmd);
+    showToast('Copied: ' + cmd + '  (run in terminal)');
   });
 }
 
