@@ -539,6 +539,93 @@ function searchFullText(query, sessions) {
 
 // ── Exports ────────────────────────────────────────────────
 
+// ── Active sessions detection ─────────────────────────────
+
+function getActiveSessions() {
+  const active = [];
+  const sessionsDir = path.join(CLAUDE_DIR, 'sessions');
+
+  // Read ~/.claude/sessions/<PID>.json files
+  if (fs.existsSync(sessionsDir)) {
+    for (const file of fs.readdirSync(sessionsDir)) {
+      if (!file.endsWith('.json')) continue;
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(sessionsDir, file), 'utf8'));
+        const pid = data.pid;
+        if (!pid) continue;
+
+        // Check if process is alive + get CPU
+        try {
+          const psOut = execSync(`ps -p ${pid} -o pid=,%cpu=,rss=,stat= 2>/dev/null`, { encoding: 'utf8', timeout: 2000 }).trim();
+          if (!psOut) continue;
+
+          const parts = psOut.trim().split(/\s+/);
+          const cpu = parseFloat(parts[1]) || 0;
+          const rss = parseInt(parts[2]) || 0; // KB
+          const stat = parts[3] || '';
+
+          // Determine status
+          let status = 'active';
+          if (cpu < 1 && (stat.includes('S') || stat.includes('T'))) {
+            status = 'waiting'; // idle/sleeping — likely waiting for user input
+          }
+
+          active.push({
+            pid: pid,
+            sessionId: data.sessionId,
+            cwd: data.cwd || '',
+            startedAt: data.startedAt || 0,
+            kind: data.kind || 'interactive',
+            entrypoint: data.entrypoint || '',
+            status: status,
+            cpu: cpu,
+            memoryMB: Math.round(rss / 1024),
+          });
+        } catch {
+          // Process not found — stale file, skip
+        }
+      } catch {}
+    }
+  }
+
+  // Also check Codex processes
+  try {
+    const codexPs = execSync('ps aux 2>/dev/null | grep "[c]odex" || true', { encoding: 'utf8', timeout: 2000 });
+    for (const line of codexPs.split('\n').filter(Boolean)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 11) continue;
+      const pid = parseInt(parts[1]);
+      const cpu = parseFloat(parts[2]) || 0;
+      const rss = parseInt(parts[5]) || 0;
+
+      // Skip if already found via claude sessions
+      if (active.find(a => a.pid === pid)) continue;
+
+      // Try to get cwd
+      let cwd = '';
+      try {
+        const lsofOut = execSync(`lsof -d cwd -p ${pid} -Fn 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
+        const match = lsofOut.match(/\nn(\/[^\n]+)/);
+        if (match) cwd = match[1];
+      } catch {}
+
+      active.push({
+        pid: pid,
+        sessionId: '',
+        cwd: cwd,
+        startedAt: 0,
+        kind: 'codex',
+        entrypoint: 'codex',
+        status: cpu < 1 ? 'waiting' : 'active',
+        cpu: cpu,
+        memoryMB: Math.round(rss / 1024),
+      });
+    }
+  } catch {}
+
+  return active;
+}
+
 module.exports = {
   loadSessions,
   loadSessionDetail,
@@ -547,6 +634,7 @@ module.exports = {
   exportSessionMarkdown,
   getSessionPreview,
   searchFullText,
+  getActiveSessions,
   CLAUDE_DIR,
   CODEX_DIR,
   HISTORY_FILE,

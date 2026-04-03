@@ -18,6 +18,7 @@ let selectedIds = new Set();
 let focusedIndex = -1;
 let availableTerminals = [];
 let pendingDelete = null;
+let activeSessions = {}; // sessionId -> {status, cpu, memoryMB, pid}
 
 // Persisted in localStorage
 let stars = JSON.parse(localStorage.getItem('codedash-stars') || '[]');
@@ -194,6 +195,45 @@ async function loadTerminals() {
 
 function saveTerminalPref(val) {
   localStorage.setItem('codedash-terminal', val);
+}
+
+// ── Active sessions polling ───────────────────────────────────
+
+async function pollActiveSessions() {
+  try {
+    var resp = await fetch('/api/active');
+    var data = await resp.json();
+    activeSessions = {};
+    data.forEach(function(a) {
+      if (a.sessionId) {
+        activeSessions[a.sessionId] = a;
+      }
+    });
+    // Update badges without full re-render
+    document.querySelectorAll('.card').forEach(function(card) {
+      var id = card.getAttribute('data-id');
+      var existing = card.querySelector('.live-badge');
+      if (existing) existing.remove();
+      if (activeSessions[id]) {
+        var a = activeSessions[id];
+        var badge = document.createElement('span');
+        badge.className = 'live-badge live-' + a.status;
+        badge.textContent = a.status === 'waiting' ? 'WAITING' : 'LIVE';
+        badge.title = 'PID ' + a.pid + ' | CPU ' + a.cpu.toFixed(1) + '% | ' + a.memoryMB + 'MB';
+        var top = card.querySelector('.card-top');
+        if (top) top.insertBefore(badge, top.firstChild);
+      }
+    });
+  } catch {}
+}
+
+var activeInterval = null;
+function startActivePolling() {
+  pollActiveSessions();
+  activeInterval = setInterval(pollActiveSessions, 5000);
+}
+function stopActivePolling() {
+  if (activeInterval) clearInterval(activeInterval);
 }
 
 // ── Trigram search ─────────────────────────────────────────────
@@ -1426,6 +1466,7 @@ function dismissUpdate() {
   loadTerminals();
   checkForUpdates();
   initHoverPreview();
+  startActivePolling();
 
   // Apply saved theme
   var savedTheme = localStorage.getItem('codedash-theme') || 'dark';

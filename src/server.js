@@ -3,7 +3,7 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 const { exec } = require('child_process');
-const { loadSessions, loadSessionDetail, deleteSession, getGitCommits, exportSessionMarkdown, getSessionPreview, searchFullText } = require('./data');
+const { loadSessions, loadSessionDetail, deleteSession, getGitCommits, exportSessionMarkdown, getSessionPreview, searchFullText, getActiveSessions } = require('./data');
 const { detectTerminals, openInTerminal } = require('./terminals');
 const { getHTML } = require('./html');
 
@@ -102,6 +102,12 @@ function startServer(port, openBrowser = true) {
       const to = parseInt(parsed.searchParams.get('to') || Date.now().toString());
       const commits = getGitCommits(project, from, to);
       json(res, commits);
+    }
+
+    // ── Active sessions ─────────────────────
+    else if (req.method === 'GET' && pathname === '/api/active') {
+      const active = getActiveSessions();
+      json(res, active);
     }
 
     // ── Session preview ─────────────────────
