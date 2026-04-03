@@ -1,12 +1,13 @@
 {
-  "name": "claude-sessions-dash",
+  "name": "codedash-app",
   "version": "1.0.0",
   "description": "Termius-style browser dashboard for Claude Code sessions. View, search, resume, and delete sessions with a dark-themed UI.",
   "bin": {
     "codedash": "./bin/cli.js"
   },
   "files": [
-    "bin/"
+    "bin/",
+    "src/"
   ],
   "keywords": [
     "claude",
@@ -21,11 +22,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vakovalskii/claude-sessions-dash.git"
+    "url": "git+https://github.com/vakovalskii/codedash.git"
   },
-  "homepage": "https://github.com/vakovalskii/claude-sessions-dash#readme",
+  "homepage": "https://github.com/vakovalskii/codedash#readme",
   "bugs": {
-    "url": "https://github.com/vakovalskii/claude-sessions-dash/issues"
+    "url": "https://github.com/vakovalskii/codedash/issues"
   },
   "author": "Valerii Kovalskii",
   "license": "MIT",
