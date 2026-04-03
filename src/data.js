@@ -157,7 +157,7 @@ function loadSessions() {
   // Enrich Claude sessions with detail file info
   for (const [sid, s] of Object.entries(sessions)) {
     if (s.tool !== 'claude') continue;
-    const projectKey = s.project.replace(/\//g, '-').replace(/^-/, '');
+    const projectKey = s.project.replace(/[\/\.]/g, '-');
     const sessionFile = path.join(PROJECTS_DIR, projectKey, `${sid}.jsonl`);
     if (fs.existsSync(sessionFile)) {
       s.has_detail = true;
@@ -192,33 +192,33 @@ function loadSessions() {
 }
 
 function loadSessionDetail(sessionId, project) {
-  const projectKey = project.replace(/\//g, '-').replace(/^-/, '');
-  const sessionFile = path.join(PROJECTS_DIR, projectKey, `${sessionId}.jsonl`);
-
-  if (!fs.existsSync(sessionFile)) {
-    return { error: 'Session file not found', messages: [] };
-  }
+  const found = findSessionFile(sessionId, project);
+  if (!found) return { error: 'Session file not found', messages: [] };
 
   const messages = [];
-  const lines = fs.readFileSync(sessionFile, 'utf8').split('\n').filter(Boolean);
+  const lines = fs.readFileSync(found.file, 'utf8').split('\n').filter(Boolean);
 
   for (const line of lines) {
     try {
       const entry = JSON.parse(line);
-      if (entry.type === 'user' || entry.type === 'assistant') {
-        const msg = entry.message || {};
-        let content = msg.content || '';
-        if (Array.isArray(content)) {
-          content = content
-            .map(b => (typeof b === 'string' ? b : (b.type === 'text' ? b.text : '')))
-            .filter(Boolean)
-            .join('\n');
+
+      if (found.format === 'claude') {
+        if (entry.type === 'user' || entry.type === 'assistant') {
+          const content = extractContent((entry.message || {}).content);
+          if (content) {
+            messages.push({ role: entry.type, content: content.slice(0, 2000), uuid: entry.uuid || '' });
+          }
         }
-        messages.push({
-          role: entry.type,
-          content: content.slice(0, 2000),
-          uuid: entry.uuid || '',
-        });
+      } else {
+        if (entry.type === 'response_item' && entry.payload) {
+          const role = entry.payload.role;
+          if (role === 'user' || role === 'assistant') {
+            const content = extractContent(entry.payload.content);
+            if (content && !content.startsWith('<permissions') && !content.startsWith('<environment_context') && !content.startsWith('<collaboration_mode')) {
+              messages.push({ role: role, content: content.slice(0, 2000), uuid: '' });
+            }
+          }
+        }
       }
     } catch {}
   }
@@ -230,7 +230,7 @@ function deleteSession(sessionId, project) {
   const deleted = [];
 
   // 1. Remove session JSONL file from project dir
-  const projectKey = project.replace(/\//g, '-').replace(/^-/, '');
+  const projectKey = project.replace(/[\/\.]/g, '-');
   const sessionFile = path.join(PROJECTS_DIR, projectKey, `${sessionId}.jsonl`);
   if (fs.existsSync(sessionFile)) {
     fs.unlinkSync(sessionFile);
@@ -299,7 +299,7 @@ function getGitCommits(projectDir, fromTs, toTs) {
 }
 
 function exportSessionMarkdown(sessionId, project) {
-  const projectKey = project.replace(/\//g, '-').replace(/^-/, '');
+  const projectKey = project.replace(/[\/\.]/g, '-');
   const sessionFile = path.join(PROJECTS_DIR, projectKey, `${sessionId}.jsonl`);
 
   if (!fs.existsSync(sessionFile)) {
@@ -332,33 +332,89 @@ function exportSessionMarkdown(sessionId, project) {
 
 // ── Session Preview (first N messages, lightweight) ────────
 
+function findSessionFile(sessionId, project) {
+  // Try Claude projects dir
+  if (project) {
+    const projectKey = project.replace(/[\/\.]/g, '-');
+    const claudeFile = path.join(PROJECTS_DIR, projectKey, `${sessionId}.jsonl`);
+    if (fs.existsSync(claudeFile)) return { file: claudeFile, format: 'claude' };
+  }
+
+  // Try all Claude project dirs
+  if (fs.existsSync(PROJECTS_DIR)) {
+    for (const proj of fs.readdirSync(PROJECTS_DIR)) {
+      const f = path.join(PROJECTS_DIR, proj, `${sessionId}.jsonl`);
+      if (fs.existsSync(f)) return { file: f, format: 'claude' };
+    }
+  }
+
+  // Try Codex sessions dir (walk year/month/day)
+  const codexSessionsDir = path.join(CODEX_DIR, 'sessions');
+  if (fs.existsSync(codexSessionsDir)) {
+    const walkDir = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          const result = walkDir(full);
+          if (result) return result;
+        } else if (entry.name.includes(sessionId) && entry.name.endsWith('.jsonl')) {
+          return full;
+        }
+      }
+      return null;
+    };
+    const codexFile = walkDir(codexSessionsDir);
+    if (codexFile) return { file: codexFile, format: 'codex' };
+  }
+
+  return null;
+}
+
+function extractContent(raw) {
+  if (!raw) return '';
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw)) {
+    return raw
+      .map(b => (typeof b === 'string' ? b : (b.text || b.input_text || '')))
+      .filter(Boolean)
+      .join('\n');
+  }
+  return String(raw);
+}
+
 function getSessionPreview(sessionId, project, limit) {
   limit = limit || 10;
-  const projectKey = project.replace(/\//g, '-').replace(/^-/, '');
-  const sessionFile = path.join(PROJECTS_DIR, projectKey, `${sessionId}.jsonl`);
-
-  if (!fs.existsSync(sessionFile)) return [];
+  const found = findSessionFile(sessionId, project);
+  if (!found) return [];
 
   const messages = [];
-  const lines = fs.readFileSync(sessionFile, 'utf8').split('\n').filter(Boolean);
+  const lines = fs.readFileSync(found.file, 'utf8').split('\n').filter(Boolean);
 
   for (const line of lines) {
     if (messages.length >= limit) break;
     try {
       const entry = JSON.parse(line);
-      if (entry.type === 'user' || entry.type === 'assistant') {
-        const msg = entry.message || {};
-        let content = msg.content || '';
-        if (Array.isArray(content)) {
-          content = content
-            .map(b => (typeof b === 'string' ? b : (b.type === 'text' ? b.text : '')))
-            .filter(Boolean)
-            .join('\n');
+
+      if (found.format === 'claude') {
+        // Claude: {type: "user"|"assistant", message: {content: ...}}
+        if (entry.type === 'user' || entry.type === 'assistant') {
+          const content = extractContent((entry.message || {}).content);
+          if (content) {
+            messages.push({ role: entry.type, content: content.slice(0, 300) });
+          }
         }
-        messages.push({
-          role: entry.type,
-          content: content.slice(0, 300), // short preview
-        });
+      } else {
+        // Codex: {type: "response_item", payload: {role: "user"|"assistant", content: [...]}}
+        if (entry.type === 'response_item' && entry.payload) {
+          const role = entry.payload.role;
+          if (role === 'user' || role === 'assistant') {
+            const content = extractContent(entry.payload.content);
+            // Skip system-like messages
+            if (content && !content.startsWith('<permissions') && !content.startsWith('<environment_context') && !content.startsWith('<collaboration_mode')) {
+              messages.push({ role: role, content: content.slice(0, 300) });
+            }
+          }
+        }
       }
     } catch {}
   }
@@ -376,7 +432,7 @@ function searchFullText(query, sessions) {
   for (const s of sessions) {
     if (s.tool !== 'claude' || !s.has_detail) continue;
 
-    const projectKey = s.project.replace(/\//g, '-').replace(/^-/, '');
+    const projectKey = s.project.replace(/[\/\.]/g, '-');
     const sessionFile = path.join(PROJECTS_DIR, projectKey, `${s.id}.jsonl`);
     if (!fs.existsSync(sessionFile)) continue;
 

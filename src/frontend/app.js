@@ -1344,13 +1344,29 @@ async function checkForUpdates() {
   try {
     var resp = await fetch('/api/version');
     var data = await resp.json();
+    var badge = document.getElementById('versionBadge');
+
+    if (badge) {
+      badge.textContent = 'v' + data.current;
+    }
+
     if (data.updateAvailable) {
+      if (badge) {
+        badge.textContent = 'v' + data.current + ' → v' + data.latest;
+        badge.classList.add('update-available');
+        badge.title = 'Click to copy update command';
+        badge.onclick = function() {
+          navigator.clipboard.writeText('npm i -g codedash-app@latest').then(function() {
+            showToast('Copied: npm i -g codedash-app@latest');
+          });
+        };
+      }
       var banner = document.getElementById('updateBanner');
       var text = document.getElementById('updateText');
       if (banner && text) {
-        text.textContent = 'Update available: v' + data.current + ' → v' + data.latest;
+        text.textContent = 'v' + data.latest + ' available — run: npm i -g codedash-app@latest';
         banner.style.display = 'flex';
-        banner.dataset.cmd = 'npm update -g codedash-app && codedash run';
+        banner.dataset.cmd = 'npm i -g codedash-app@latest';
       }
     }
   } catch {}

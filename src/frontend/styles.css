@@ -100,6 +100,26 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
+}
+
+.version-badge {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.06);
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.version-badge.update-available {
+    color: var(--accent-green);
+    background: rgba(74, 222, 128, 0.15);
+    cursor: pointer;
+}
+
+.version-badge.update-available:hover {
+    background: rgba(74, 222, 128, 0.25);
 }
 
 .sidebar-item {
