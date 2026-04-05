@@ -1837,9 +1837,9 @@ var AGENT_INSTALL = {
   },
   kiro: {
     name: 'Kiro CLI',
-    cmd: 'curl -fsSL https://kiro.dev/install.sh | bash',
+    cmd: 'curl -fsSL https://cli.kiro.dev/install | bash',
     alt: null,
-    url: 'https://kiro.dev/cli/',
+    url: 'https://kiro.dev/docs/cli/installation/',
   },
   opencode: {
     name: 'OpenCode',
