@@ -1086,7 +1086,10 @@ async function openDetail(s) {
   if (activeSessions[s.id]) {
     infoHtml += '<button class="launch-btn" style="background:var(--accent-green);color:#000" onclick="focusSession(\'' + s.id + '\')">Focus Terminal</button>';
   } else {
-    infoHtml += '<button class="launch-btn" onclick="launchSession(\'' + s.id + '\',\'' + escHtml(s.tool) + '\',\'' + escHtml(s.project || '') + '\')">Resume in Terminal</button>';
+    infoHtml += '<button class="launch-btn" onclick="launchSession(\'' + s.id + '\',\'' + escHtml(s.tool) + '\',\'' + escHtml(s.project || '') + '\')">Resume</button>';
+    if (s.tool === 'claude') {
+      infoHtml += '<button class="launch-btn" style="background:var(--accent-orange);color:#000" onclick="launchDangerous(\'' + s.id + '\',\'' + escHtml(s.project || '') + '\')" title="--dangerously-skip-permissions">Resume (skip perms)</button>';
+    }
   }
   infoHtml += '<button class="launch-btn btn-secondary" onclick="copyResume(\'' + s.id + '\',\'' + escHtml(s.tool) + '\')">Copy Command</button>';
   if (s.has_detail) {
@@ -1183,7 +1186,11 @@ async function loadGitCommits(project, fromTs, toTs) {
   }
 }
 
-function launchSession(sessionId, tool, project) {
+function launchDangerous(sessionId, project) {
+  launchSession(sessionId, 'claude', project, ['skip-permissions']);
+}
+
+function launchSession(sessionId, tool, project, flags) {
   var terminal = localStorage.getItem('codedash-terminal') || '';
   fetch('/api/launch', {
     method: 'POST',
@@ -1191,7 +1198,7 @@ function launchSession(sessionId, tool, project) {
     body: JSON.stringify({
       sessionId: sessionId,
       tool: tool,
-      flags: [],
+      flags: flags || [],
       project: project,
       terminal: terminal
     })
