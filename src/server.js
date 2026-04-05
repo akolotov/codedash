@@ -191,7 +191,11 @@ function startServer(port, openBrowser = true) {
 
     // ── Cost analytics ──────────────────────
     else if (req.method === 'GET' && pathname === '/api/analytics/cost') {
-      const sessions = loadSessions();
+      let sessions = loadSessions();
+      const from = parsed.searchParams.get('from');
+      const to = parsed.searchParams.get('to');
+      if (from) sessions = sessions.filter(s => s.date >= from);
+      if (to) sessions = sessions.filter(s => s.date <= to);
       const data = getCostAnalytics(sessions);
       json(res, data);
     }

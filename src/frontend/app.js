@@ -832,15 +832,18 @@ function renderTimeline(container, sessions) {
     return;
   }
 
+  var renderFn = layout === 'list' ? renderListCard : renderCard;
   var globalIdx = 0;
   var html = '<div class="timeline">';
   dates.forEach(function(d) {
     html += '<div class="timeline-date">';
     html += '<div class="timeline-date-label">' + escHtml(d) + ' <span class="timeline-count">' + byDate[d].length + ' sessions</span></div>';
+    var wrapClass = layout === 'list' ? 'list-view' : 'grid-view';
+    html += '<div class="' + wrapClass + '">';
     byDate[d].forEach(function(s) {
-      html += renderCard(s, globalIdx++);
+      html += renderFn(s, globalIdx++);
     });
-    html += '</div>';
+    html += '</div></div>';
   });
   html += '</div>';
   container.innerHTML = html;
@@ -1223,9 +1226,14 @@ function exportMd(sessionId, project) {
 function showDeleteConfirm(sessionId, project) {
   pendingDelete = { id: sessionId, project: project };
   var overlay = document.getElementById('confirmOverlay');
-  var idEl = document.getElementById('confirmId');
   if (overlay) overlay.style.display = 'flex';
-  if (idEl) idEl.textContent = sessionId;
+  document.getElementById('confirmTitle').textContent = 'Delete Session?';
+  document.getElementById('confirmText').textContent = 'This will permanently delete the session file, history entries, and env data.';
+  document.getElementById('confirmId').textContent = sessionId;
+  var btn = document.getElementById('confirmAction');
+  btn.textContent = 'Delete';
+  btn.className = 'btn-delete';
+  btn.onclick = function() { confirmDelete(); };
 }
 
 function closeConfirm() {
@@ -1656,7 +1664,12 @@ async function renderAnalytics(container) {
   container.innerHTML = '<div class="loading">Loading analytics...</div>';
 
   try {
-    var resp = await fetch('/api/analytics/cost');
+    var url = '/api/analytics/cost';
+    var params = [];
+    if (dateFrom) params.push('from=' + dateFrom);
+    if (dateTo) params.push('to=' + dateTo);
+    if (params.length) url += '?' + params.join('&');
+    var resp = await fetch(url);
     var data = await resp.json();
 
     var html = '<div class="analytics-container">';

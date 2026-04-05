@@ -35,6 +35,12 @@ function detectTerminals() {
       execSync('which alacritty', { stdio: 'pipe' });
       terminals.push({ id: 'alacritty', name: 'Alacritty', available: true });
     } catch {}
+    // Check cmux
+    try {
+      if (fs.existsSync('/Applications/cmux.app')) {
+        terminals.push({ id: 'cmux', name: 'cmux', available: true });
+      }
+    } catch {}
   } else if (platform === 'linux') {
     const linuxTerms = [
       { id: 'gnome-terminal', name: 'GNOME Terminal', cmd: 'gnome-terminal' },
@@ -103,6 +109,10 @@ function openInTerminal(sessionId, tool, flags, projectDir, terminalId) {
       case 'alacritty':
         exec(`alacritty -e bash -c '${fullCmd}; exec bash'`);
         break;
+      case 'cmux':
+        // cmux — just activate it, user manages sessions inside
+        execSync(`osascript -e 'tell application "cmux" to activate'`);
+        break;
       case 'iterm2':
       default: {
         const script = `
@@ -169,6 +179,16 @@ function focusTerminalByPid(pid) {
       const ttyOut = execSync(`ps -p ${pid} -o tty= 2>/dev/null`, { encoding: 'utf8' }).trim();
       if (!ttyOut) throw new Error('no tty');
 
+      // Check if the process parent chain includes cmux
+      try {
+        const ppidChain = execSync(`ps -p ${pid} -o ppid= 2>/dev/null`, { encoding: 'utf8' }).trim();
+        const parentCmd = execSync(`ps -p ${ppidChain.trim()} -o comm= 2>/dev/null`, { encoding: 'utf8' }).trim();
+        if (parentCmd.includes('cmux')) {
+          execSync(`osascript -e 'tell application "cmux" to activate'`, { stdio: 'pipe', timeout: 2000 });
+          return true;
+        }
+      } catch {}
+
       // Try iTerm2 first — activate and select the right tab/window by tty
       try {
         const script = `
@@ -191,6 +211,14 @@ function focusTerminalByPid(pid) {
         `;
         execSync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { stdio: 'pipe', timeout: 3000 });
         return true;
+      } catch {}
+
+      // Try cmux
+      try {
+        if (fs.existsSync('/Applications/cmux.app')) {
+          execSync(`osascript -e 'tell application "cmux" to activate'`, { stdio: 'pipe', timeout: 2000 });
+          return true;
+        }
       } catch {}
 
       // Fallback: just activate iTerm2 or Terminal.app
