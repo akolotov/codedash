@@ -1,60 +1,54 @@
 # CodeDash
 
-Claude Code 和 Codex 会话的浏览器仪表板。查看、搜索、恢复和管理您所有的 AI 编程会话。
+Claude Code、Codex 和 OpenCode 会话的仪表板 + CLI。查看、搜索、恢复、转换和在 AI 编程代理之间传递会话。
 
 [English](../README.md) | [Russian / Русский](README_RU.md)
 
 ## 快速开始
 
 ```bash
-npx codedash-app run
+npm i -g codedash-app
+codedash run
 ```
 
-自动在浏览器中打开 `http://localhost:3847`。
+## 支持的代理
 
-```bash
-npx codedash-app run --port=4000    # 自定义端口
-npx codedash-app run --no-browser   # 不自动打开浏览器
-npx codedash-app list               # 在终端中列出会话
-npx codedash-app stats              # 显示统计信息
-```
+| 代理 | 会话 | 预览 | 搜索 | 转换 | 交接 |
+|------|------|------|------|------|------|
+| Claude Code | JSONL | 是 | 是 | 是 | 是 |
+| Codex CLI | JSONL | 是 | 是 | 是 | 是 |
+| OpenCode | SQLite | 是 | 是 | - | 是 |
 
 ## 功能
 
-**会话**
-- 网格和列表视图，按项目分组
-- Trigram 模糊搜索会话内容和项目
-- 按工具（Claude/Codex）、标签、日期范围过滤
-- 星标/置顶重要会话（始终显示在最前面）
-- 标签：bug、feature、research、infra、deploy、review
-- GitHub 风格的活动热力图
-- 每个会话的成本估算
+**浏览器仪表板**
+- 网格/列表视图，按项目分组
+- Trigram 模糊搜索 + 全文深度搜索
+- 按工具、标签、日期范围过滤
+- 星标、标签、活动热力图、会话回放
+- 主题：Dark、Light、System
 
-**启动**
-- 在 iTerm2、Terminal.app、Warp、Kitty、Alacritty 中恢复会话
-- 自动 `cd` 到项目目录
-- 复制恢复命令到剪贴板
-- 终端偏好设置在会话间保存
+**实时监控**
+- 运行中的会话：CPU、内存、PID、运行时间
+- LIVE/WAITING 徽章，带动画边框
 
-**管理**
-- 删除会话（文件 + 历史 + 环境变量）
-- 批量选择和删除
-- 导出对话为 Markdown
-- 显示每个会话相关的 git 提交
-- 自动检查更新
+**成本分析**
+- 基于实际 token 使用量的真实成本
+- 按模型定价、按日/项目图表
 
-**主题**：Dark、Light、System
+**跨代理**
+- Claude Code 和 Codex 之间的会话转换
+- Handoff：生成上下文文档以在任何代理中继续
 
-**快捷键**：`/` 搜索，`j/k` 导航，`Enter` 打开，`x` 星标，`d` 删除，`s` 选择模式，`g` 分组，`r` 刷新，`Esc` 关闭
-
-## 工作原理
-
-从 `~/.claude/` 和 `~/.codex/` 读取会话数据。零依赖。全部运行在 `localhost`。
+**CLI**
+```bash
+codedash run / search / show / handoff / convert / export / import / update
+```
 
 ## 要求
 
-- Node.js >= 16
-- 已安装 Claude Code 或 Codex CLI
+- Node.js >= 18
+- 至少安装一个 AI 编程代理
 - macOS / Linux / Windows
 
 ## 许可证

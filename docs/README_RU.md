@@ -1,60 +1,63 @@
 # CodeDash
 
-Браузерный дашборд для сессий Claude Code и Codex. Смотри, ищи, возобновляй и управляй всеми своими AI-сессиями.
+Дашборд + CLI для сессий Claude Code, Codex и OpenCode. Смотри, ищи, возобновляй, конвертируй и передавай сессии между AI-агентами.
 
 [English](../README.md) | [Chinese / 中文](README_ZH.md)
 
 ## Быстрый старт
 
 ```bash
-npx codedash-app run
+npm i -g codedash-app
+codedash run
 ```
 
-Откроется `http://localhost:3847` в браузере.
+## Поддерживаемые агенты
 
-```bash
-npx codedash-app run --port=4000    # свой порт
-npx codedash-app run --no-browser   # без авто-открытия
-npx codedash-app list               # список сессий в терминале
-npx codedash-app stats              # статистика
-```
+| Агент | Сессии | Превью | Поиск | Конвертация | Handoff |
+|-------|--------|--------|-------|-------------|---------|
+| Claude Code | JSONL | Да | Да | Да | Да |
+| Codex CLI | JSONL | Да | Да | Да | Да |
+| OpenCode | SQLite | Да | Да | - | Да |
 
 ## Возможности
 
-**Сессии**
-- Grid и List вид с группировкой по проектам
-- Trigram нечёткий поиск по содержимому и проектам
-- Фильтры по инструменту (Claude/Codex), тегам, диапазону дат
-- Звёздочки/закрепление важных сессий (всегда вверху списка)
-- Теги: bug, feature, research, infra, deploy, review
-- Heatmap активности в стиле GitHub
-- Оценка стоимости сессии
+**Браузерный дашборд**
+- Grid/List вид с группировкой по проектам
+- Trigram нечёткий поиск + полнотекстовый поиск по всем сообщениям
+- Фильтры по инструменту, тегам, диапазону дат
+- Звёздочки, теги (bug, feature, research, infra, deploy, review)
+- Heatmap активности, Session Replay с ползунком
+- Темы: Dark, Light, System
 
-**Запуск**
-- Возобновление сессий в iTerm2, Terminal.app, Warp, Kitty, Alacritty
-- Авто `cd` в директорию проекта
-- Копирование команды resume в буфер
-- Выбор терминала сохраняется
+**Мониторинг**
+- Запущенные сессии: CPU, Memory, PID, Uptime
+- LIVE/WAITING бейджи с анимированной рамкой
+- Focus Terminal — переключение на активную сессию
 
-**Управление**
-- Удаление сессий (файл + история + env)
-- Массовое выделение и удаление
-- Экспорт переписки в Markdown
-- Связанные git-коммиты для каждой сессии
-- Авто-проверка обновлений
+**Аналитика стоимости**
+- Реальная стоимость из usage данных (input/output/cache)
+- Цены по моделям: Opus, Sonnet, Haiku, Codex, GPT-5
+- Графики по дням и проектам
 
-**Темы**: Dark, Light, System
+**Cross-Agent**
+- Конвертация сессий между Claude Code и Codex
+- Handoff: контекстный документ для продолжения в другом агенте
 
-**Горячие клавиши**: `/` поиск, `j/k` навигация, `Enter` открыть, `x` звезда, `d` удалить, `s` выделение, `g` группировка, `r` обновить, `Esc` закрыть
-
-## Как работает
-
-Читает данные сессий из `~/.claude/` и `~/.codex/`. Ноль зависимостей. Всё на `localhost`.
+**CLI**
+```bash
+codedash run                          # запуск дашборда
+codedash search <запрос>              # поиск по всем сессиям
+codedash show <session-id>            # детали сессии
+codedash handoff <id> [target]        # передача контекста
+codedash convert <id> claude|codex    # конвертация формата
+codedash export / import              # бэкап и восстановление
+codedash update / restart / stop      # управление
+```
 
 ## Требования
 
-- Node.js >= 16
-- Claude Code или Codex CLI
+- Node.js >= 18
+- Хотя бы один AI-агент установлен
 - macOS / Linux / Windows
 
 ## Лицензия
