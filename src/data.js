@@ -202,6 +202,53 @@ function loadKiroDetail(conversationId) {
   }
 }
 
+// Cursor stores each workspace under ~/.cursor/projects/<key>/ where <key> is the
+// absolute path with / and . replaced by -. Hyphens inside a directory name are
+// preserved, so splitting <key> on "-" cannot recover the path. Decode by
+// greedily matching the longest real child directory name at each level.
+function decodeCursorProjectFolderKey(proj) {
+  if (!proj) return '';
+  let enc = proj;
+  let cwd = '';
+  while (enc.length > 0) {
+    const parent = cwd || '/';
+    let dirs;
+    try {
+      dirs = fs.readdirSync(parent, { withFileTypes: true })
+        .filter(function (e) { return e.isDirectory(); })
+        .map(function (e) { return e.name; });
+    } catch {
+      return cwd || ('/' + proj.replace(/-/g, '/'));
+    }
+    dirs.sort(function (a, b) { return b.length - a.length; });
+    var matched = null;
+    for (var j = 0; j < dirs.length; j++) {
+      var d = dirs[j];
+      // Cursor encodes both / and . as -, so compare against encoded dir name
+      var encoded = d.replace(/[\/\.]/g, '-');
+      if (enc === encoded || (enc.startsWith(encoded) && (enc.length === encoded.length || enc[encoded.length] === '-'))) {
+        matched = d;
+        break;
+      }
+    }
+    if (!matched) {
+      var idx = enc.indexOf('-');
+      var part = idx === -1 ? enc : enc.slice(0, idx);
+      var next = cwd ? path.join(cwd, part) : path.join('/', part);
+      if (fs.existsSync(next)) {
+        cwd = next;
+        enc = idx === -1 ? '' : enc.slice(idx + 1);
+      } else {
+        return cwd || ('/' + proj.replace(/-/g, '/'));
+      }
+      continue;
+    }
+    cwd = cwd ? path.join(cwd, matched) : path.join('/', matched);
+    enc = enc.length === matched.length ? '' : enc.slice(matched.length + 1);
+  }
+  return cwd;
+}
+
 function scanCursorSessions() {
   const sessions = [];
 
@@ -212,22 +259,7 @@ function scanCursorSessions() {
         const transcriptsDir = path.join(CURSOR_PROJECTS, proj, 'agent-transcripts');
         if (!fs.existsSync(transcriptsDir)) continue;
 
-        // Decode project path from Cursor's encoding
-        // "Users-v-kovalskii-vpn" could be /Users/v.kovalskii/vpn or /Users/v-kovalskii/vpn
-        // Try to find existing directory by progressively splitting
-        let projectPath = '';
-        const segments = proj.split('-');
-        let candidate = '';
-        for (let i = 0; i < segments.length; i++) {
-          var trySlash = candidate + '/' + segments[i];
-          var tryDash = candidate + (candidate ? '-' : '') + segments[i];
-          var tryDot = candidate + (candidate ? '.' : '') + segments[i];
-          if (fs.existsSync(trySlash)) { candidate = trySlash; }
-          else if (fs.existsSync(tryDot)) { candidate = tryDot; }
-          else if (i === 0) { candidate = '/' + segments[i]; }
-          else { candidate = trySlash; } // default to slash
-        }
-        projectPath = candidate || ('/' + proj.replace(/-/g, '/'));
+        const projectPath = decodeCursorProjectFolderKey(proj) || ('/' + proj.replace(/-/g, '/'));
 
         for (const sessDir of fs.readdirSync(transcriptsDir)) {
           const sessFile = path.join(transcriptsDir, sessDir, sessDir + '.jsonl');
@@ -573,6 +605,72 @@ function loadSessions() {
       s.file_size = 0;
       s.detail_messages = 0;
     }
+  }
+
+  // Scan project dirs for orphan sessions (e.g. Claude Extension sessions not in history.jsonl)
+  if (fs.existsSync(PROJECTS_DIR)) {
+    try {
+      for (const proj of fs.readdirSync(PROJECTS_DIR)) {
+        const projDir = path.join(PROJECTS_DIR, proj);
+        if (!fs.statSync(projDir).isDirectory()) continue;
+        for (const file of fs.readdirSync(projDir)) {
+          if (!file.endsWith('.jsonl')) continue;
+          const sid = file.replace('.jsonl', '');
+          if (sessions[sid]) continue; // already loaded
+          const filePath = path.join(projDir, file);
+          const stat = fs.statSync(filePath);
+          let projectPath = '';
+          let tool = 'claude';
+          let msgCount = 0;
+          let firstMsg = '';
+          let firstTs = stat.mtimeMs;
+          let lastTs = stat.mtimeMs;
+          try {
+            const sLines = fs.readFileSync(filePath, 'utf8').split('\n').filter(Boolean);
+            let entrypointFound = false;
+            for (const sl of sLines) {
+              try {
+                const entry = JSON.parse(sl);
+                if (entry.type === 'user' || entry.type === 'assistant') msgCount++;
+                if (entry.timestamp) {
+                  if (entry.timestamp < firstTs) firstTs = entry.timestamp;
+                  if (entry.timestamp > lastTs) lastTs = entry.timestamp;
+                }
+                if (!projectPath && entry.type === 'user' && entry.cwd) {
+                  projectPath = entry.cwd;
+                }
+                if (!entrypointFound && entry.type === 'user' && entry.entrypoint) {
+                  entrypointFound = true;
+                  if (entry.entrypoint !== 'cli') tool = 'claude-ext';
+                }
+                if (!firstMsg && entry.type === 'user' && entry.message && entry.message.content) {
+                  const content = entry.message.content;
+                  if (typeof content === 'string') firstMsg = content.slice(0, 200);
+                  else if (Array.isArray(content)) {
+                    for (let ci = 0; ci < content.length; ci++) {
+                      if (content[ci].type === 'text' && content[ci].text) { firstMsg = content[ci].text.slice(0, 200); break; }
+                    }
+                  }
+                }
+              } catch {}
+            }
+          } catch {}
+          sessions[sid] = {
+            id: sid,
+            tool: tool,
+            project: projectPath,
+            project_short: projectPath.replace(os.homedir(), '~'),
+            first_ts: firstTs,
+            last_ts: lastTs,
+            messages: msgCount,
+            first_message: firstMsg,
+            has_detail: true,
+            file_size: stat.size,
+            detail_messages: msgCount,
+          };
+        }
+      }
+    } catch {}
   }
 
   const result = Object.values(sessions).sort((a, b) => b.last_ts - a.last_ts);
@@ -1266,10 +1364,12 @@ function getActiveSessions() {
       let sessionId = '';
       let cwd = '';
       let startedAt = 0;
+      let sessionSource = '';
       if (claudePidMap[pid]) {
         sessionId = claudePidMap[pid].sessionId || '';
         cwd = claudePidMap[pid].cwd || '';
         startedAt = claudePidMap[pid].startedAt || 0;
+        if (sessionId) sessionSource = 'pid-file';
       }
 
       // Try to get cwd from lsof if not from PID file
@@ -1285,11 +1385,17 @@ function getActiveSessions() {
       if (!sessionId) {
         const allS = loadSessions();
         const match = allS.find(s => s.tool === tool && s.project === cwd);
-        if (match) sessionId = match.id;
+        if (match) {
+          sessionId = match.id;
+          sessionSource = 'cwd-match';
+        }
         // If still no match, find latest session of this tool
         if (!sessionId) {
           const latest = allS.filter(s => s.tool === tool).sort((a,b) => b.last_ts - a.last_ts)[0];
-          if (latest) sessionId = latest.id;
+          if (latest) {
+            sessionId = latest.id;
+            sessionSource = 'fallback-latest';
+          }
         }
       }
 
@@ -1305,6 +1411,7 @@ function getActiveSessions() {
         status: status,
         cpu: cpu,
         memoryMB: Math.round(rss / 1024),
+        _sessionSource: sessionSource,
       });
     }
   } catch {}

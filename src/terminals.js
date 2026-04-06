@@ -71,6 +71,12 @@ function detectTerminals() {
 
 // ── Terminal launch ─────────────────────────────────────────
 
+function termLog(tag, msg) {
+  const ts = new Date().toLocaleTimeString('en-GB');
+  const color = tag === 'ERROR' ? '\x1b[31m' : '\x1b[35m';
+  console.log(`  ${color}${ts} [${tag}]\x1b[0m ${msg}`);
+}
+
 function openInTerminal(sessionId, tool, flags, projectDir, terminalId) {
   const skipPerms = flags.includes('skip-permissions');
   let cmd;
@@ -85,6 +91,7 @@ function openInTerminal(sessionId, tool, flags, projectDir, terminalId) {
   const cdPart = projectDir ? `cd ${JSON.stringify(projectDir)} && ` : '';
   const fullCmd = cdPart + cmd;
   const escapedCmd = fullCmd.replace(/"/g, '\\"');
+  termLog('TERM', `openInTerminal: terminal=${terminalId || 'default'} tool=${tool} cmd="${fullCmd}"`);
 
   const platform = process.platform;
 
@@ -171,12 +178,14 @@ function openInTerminal(sessionId, tool, flags, projectDir, terminalId) {
 
 function focusTerminalByPid(pid) {
   const platform = process.platform;
+  termLog('FOCUS', `focusTerminalByPid: pid=${pid} platform=${platform}`);
 
   if (platform === 'darwin') {
     // Find which terminal app owns this PID's TTY, then activate it
     try {
       // Get TTY of the process
       const ttyOut = execSync(`ps -p ${pid} -o tty= 2>/dev/null`, { encoding: 'utf8' }).trim();
+      termLog('FOCUS', `tty=${ttyOut || '(empty)'}`);
       if (!ttyOut) throw new Error('no tty');
 
       // Walk parent chain to detect cmux (claude → zsh → login → cmux)
@@ -186,7 +195,9 @@ function focusTerminalByPid(pid) {
           const ppid = execSync(`ps -p ${checkPid} -o ppid= 2>/dev/null`, { encoding: 'utf8' }).trim();
           if (!ppid || ppid === '0' || ppid === '1') break;
           const parentCmd = execSync(`ps -p ${ppid} -o comm= 2>/dev/null`, { encoding: 'utf8' }).trim();
+          termLog('FOCUS', `parent chain: depth=${depth} ppid=${ppid} cmd=${parentCmd}`);
           if (parentCmd.includes('cmux')) {
+            termLog('FOCUS', 'detected cmux in parent chain, activating');
             // Activate cmux app and try to select the right workspace
             execSync(`osascript -e 'tell application "cmux" to activate'`, { stdio: 'pipe', timeout: 2000 });
             // Try cmux CLI to focus the surface by TTY

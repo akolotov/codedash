@@ -10,10 +10,45 @@ const { generateHandoff } = require('./handoff');
 const { CHANGELOG } = require('./changelog');
 const { getHTML } = require('./html');
 
+// ── Logging ──────────────────────────────────
+const LOG_VERBOSE = process.env.CODEDASH_LOG !== '0';
+
+function log(tag, msg, data) {
+  if (!LOG_VERBOSE && tag !== 'ERROR') return;
+  const ts = new Date().toLocaleTimeString('en-GB');
+  const color = tag === 'ERROR' ? '\x1b[31m' : tag === 'WARN' ? '\x1b[33m' : tag === 'API' ? '\x1b[36m' : '\x1b[2m';
+  let line = `  ${color}${ts} [${tag}]\x1b[0m ${msg}`;
+  if (data !== undefined) {
+    const str = typeof data === 'object' ? JSON.stringify(data) : String(data);
+    line += ` \x1b[2m${str.length > 300 ? str.slice(0, 300) + '...' : str}\x1b[0m`;
+  }
+  console.log(line);
+}
+
 function startServer(port, openBrowser = true) {
   const server = http.createServer((req, res) => {
     const parsed = new URL(req.url, `http://localhost:${port}`);
     const pathname = parsed.pathname;
+    const reqStart = Date.now();
+
+    // Log all API requests (skip static & frequent polls)
+    const isApi = pathname.startsWith('/api/');
+    const isFrequent = pathname === '/api/active' || pathname === '/api/version';
+    if (isApi && !isFrequent) {
+      const params = Object.fromEntries(parsed.searchParams);
+      log('API', `${req.method} ${pathname}`, Object.keys(params).length ? params : undefined);
+    }
+
+    // Wrap json to log response time
+    const origJson = json;
+    const jsonLog = (r, data, status) => {
+      if (isApi && !isFrequent) {
+        const ms = Date.now() - reqStart;
+        const count = Array.isArray(data) ? data.length + ' items' : data && data.ok !== undefined ? (data.ok ? 'ok' : 'FAIL: ' + (data.error || '')) : '';
+        log('RESP', `${pathname} ${ms}ms`, count);
+      }
+      origJson(r, data, status);
+    };
 
     // ── Static ──────────────────────────────
     if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
@@ -31,6 +66,9 @@ function startServer(port, openBrowser = true) {
     // ── Sessions API ────────────────────────
     else if (req.method === 'GET' && pathname === '/api/sessions') {
       const sessions = loadSessions();
+      const byTool = {};
+      sessions.forEach(s => { byTool[s.tool] = (byTool[s.tool] || 0) + 1; });
+      log('DATA', `loaded ${sessions.length} sessions`, byTool);
       json(res, sessions);
     }
 
@@ -66,9 +104,12 @@ function startServer(port, openBrowser = true) {
       readBody(req, body => {
         try {
           const { sessionId, tool, flags, project, terminal } = JSON.parse(body);
+          log('LAUNCH', `session=${sessionId} tool=${tool || 'claude'} terminal=${terminal || 'default'} project=${project || '(none)'} flags=${(flags || []).join(',') || '(none)'}`);
           openInTerminal(sessionId, tool || 'claude', flags || [], project || '', terminal || '');
+          log('LAUNCH', 'ok');
           json(res, { ok: true });
         } catch (e) {
+          log('ERROR', `launch failed: ${e.message}`);
           json(res, { ok: false, error: e.message }, 400);
         }
       });
@@ -117,6 +158,18 @@ function startServer(port, openBrowser = true) {
     // ── Active sessions ─────────────────────
     else if (req.method === 'GET' && pathname === '/api/active') {
       const active = getActiveSessions();
+      // Log only when active set changes
+      const activeKey = active.map(a => a.pid + ':' + a.status).sort().join(',');
+      if (activeKey !== startServer._lastActiveKey) {
+        startServer._lastActiveKey = activeKey;
+        if (active.length > 0) {
+          for (const a of active) {
+            log('ACTIVE', `pid=${a.pid} ${a.kind}/${a.status} cpu=${a.cpu}% cwd=${a.cwd || '?'} session=${a.sessionId ? a.sessionId.slice(0,8) + '...' : 'none'} source=${a._sessionSource || 'none'}`);
+          }
+        } else if (startServer._lastActiveKey !== '') {
+          log('ACTIVE', 'no running agents');
+        }
+      }
       json(res, active);
     }
 
@@ -131,6 +184,7 @@ function startServer(port, openBrowser = true) {
           if (target && fs.existsSync(target) && !fs.statSync(target).isDirectory()) {
             target = require('path').dirname(target);
           }
+          log('IDE', `ide=${ide} project=${project} target=${target}`);
           if (ide === 'cursor') {
             exec(`cursor "${target || '.'}"`);
           } else if (ide === 'code') {
@@ -178,7 +232,9 @@ function startServer(port, openBrowser = true) {
       readBody(req, body => {
         try {
           const { pid } = JSON.parse(body);
+          log('FOCUS', `pid=${pid}`);
           const result = focusTerminalByPid(pid);
+          log('FOCUS', `result: terminal=${result.terminal || 'none'} ok=${result.ok}`);
           json(res, result);
         } catch (e) {
           json(res, { ok: false, error: e.message }, 400);
