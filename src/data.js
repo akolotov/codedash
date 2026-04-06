@@ -283,7 +283,7 @@ function decodeCursorProjectFolderKey(proj) {
     for (var j = 0; j < dirs.length; j++) {
       var d = dirs[j];
       // Cursor encodes both / and . as -, so compare against encoded dir name
-      var encoded = d.replace(/[\/\.]/g, '-');
+      var encoded = d.replace(/[^a-zA-Z0-9-]/g, '-');
       if (enc === encoded || (enc.startsWith(encoded) && (enc.length === encoded.length || enc[encoded.length] === '-'))) {
         matched = d;
         break;
@@ -709,7 +709,7 @@ function loadSessions() {
   // Enrich Claude sessions with detail file info
   for (const [sid, s] of Object.entries(sessions)) {
     if (s.tool !== 'claude') continue;
-    const projectKey = s.project.replace(/[\/\.]/g, '-');
+    const projectKey = s.project.replace(/[^a-zA-Z0-9-]/g, '-');
     const sessionFile = path.join(PROJECTS_DIR, projectKey, `${sid}.jsonl`);
     if (fs.existsSync(sessionFile)) {
       s.has_detail = true;
@@ -866,7 +866,7 @@ function deleteSession(sessionId, project) {
   const deleted = [];
 
   // 1. Remove session JSONL file from project dir
-  const projectKey = project.replace(/[\/\.]/g, '-');
+  const projectKey = project.replace(/[^a-zA-Z0-9-]/g, '-');
   const sessionFile = path.join(PROJECTS_DIR, projectKey, `${sessionId}.jsonl`);
   if (fs.existsSync(sessionFile)) {
     fs.unlinkSync(sessionFile);
@@ -935,7 +935,7 @@ function getGitCommits(projectDir, fromTs, toTs) {
 }
 
 function exportSessionMarkdown(sessionId, project) {
-  const projectKey = project.replace(/[\/\.]/g, '-');
+  const projectKey = project.replace(/[^a-zA-Z0-9-]/g, '-');
   const sessionFile = path.join(PROJECTS_DIR, projectKey, `${sessionId}.jsonl`);
 
   if (!fs.existsSync(sessionFile)) {
@@ -971,7 +971,7 @@ function exportSessionMarkdown(sessionId, project) {
 function findSessionFile(sessionId, project) {
   // Try Claude projects dir
   if (project) {
-    const projectKey = project.replace(/[\/\.]/g, '-');
+    const projectKey = project.replace(/[^a-zA-Z0-9-]/g, '-');
     const claudeFile = path.join(PROJECTS_DIR, projectKey, `${sessionId}.jsonl`);
     if (fs.existsSync(claudeFile)) return { file: claudeFile, format: 'claude' };
   }
@@ -1468,10 +1468,13 @@ function getActiveSessions() {
     { pattern: 'cursor-agent', tool: 'cursor', match: /cursor-agent/ },
   ];
 
+  // Skip process scanning on Windows (no ps/grep)
+  if (process.platform === 'win32') return active;
+
   try {
     const psOut = execSync(
       'ps aux 2>/dev/null | grep -E "claude|codex|opencode|kiro-cli|cursor-agent" | grep -v grep || true',
-      { encoding: 'utf8', timeout: 3000 }
+      { encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] }
     );
 
     for (const line of psOut.split('\n').filter(Boolean)) {
@@ -1513,7 +1516,7 @@ function getActiveSessions() {
       // Try to get cwd from lsof if not from PID file
       if (!cwd) {
         try {
-          const lsofOut = execSync(`lsof -d cwd -p ${pid} -Fn 2>/dev/null`, { encoding: 'utf8', timeout: 2000 });
+          const lsofOut = execSync(`lsof -d cwd -p ${pid} -Fn 2>/dev/null`, { encoding: 'utf8', timeout: 2000, stdio: ['pipe', 'pipe', 'pipe'] });
           const match = lsofOut.match(/\nn(\/[^\n]+)/);
           if (match) cwd = match[1];
         } catch {}
