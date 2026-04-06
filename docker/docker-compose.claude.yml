@@ -1,0 +1,7 @@
+services:
+  codedash:
+    volumes:
+      - type: bind
+        source: ${HOST_CLAUDE_DIR}
+        target: /root/.claude
+        read_only: true

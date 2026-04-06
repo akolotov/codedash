@@ -15,6 +15,26 @@ npm i -g codedash-app
 codedash run
 ```
 
+## Docker
+
+Docker files live under `docker/`. Use `./in-docker.sh` to select which host agent data sources should be mounted into the container.
+
+```bash
+./in-docker.sh --claude --codex
+./in-docker.sh --cursor -- up -d
+./in-docker.sh --all -- up --build
+```
+
+Supported flags:
+- `--claude` mounts `~/.claude` to `/root/.claude`
+- `--codex` mounts `~/.codex` to `/root/.codex`
+- `--cursor` mounts `~/.cursor` to `/root/.cursor`
+- `--opencode` mounts `~/.local/share/opencode/opencode.db`
+- `--kiro` mounts `~/Library/Application Support/kiro-cli/data.sqlite3`
+- `--all` enables every supported mount
+
+The base container always listens on `0.0.0.0:3847`, so it can be reached via the host machine LAN IP when Docker publishes that port.
+
 ## Supported Agents
 
 | Agent | Sessions | Preview | Search | Live Status | Convert | Handoff | Launch |
@@ -72,6 +92,13 @@ codedash restart
 codedash stop
 ```
 
+Bind host can be configured with `CODEDASH_HOST`:
+
+```bash
+codedash run
+CODEDASH_HOST=0.0.0.0 codedash run
+```
+
 **Keyboard Shortcuts**: `/` search, `j/k` navigate, `Enter` open, `x` star, `d` delete, `s` select, `g` group, `r` refresh, `Esc` close
 
 ## Data Sources
@@ -84,7 +111,7 @@ codedash stop
 ~/Library/Application Support/kiro-cli/ Kiro CLI (SQLite)
 ```
 
-Zero dependencies. Everything runs on `localhost`.
+Zero dependencies. By default everything runs on `localhost`. Set `CODEDASH_HOST=0.0.0.0` to listen on all interfaces, including your host machine LAN IP.
 
 ## Install Agents
 

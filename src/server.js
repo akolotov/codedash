@@ -12,6 +12,7 @@ const { getHTML } = require('./html');
 
 // ── Logging ──────────────────────────────────
 const LOG_VERBOSE = process.env.CODEDASH_LOG !== '0';
+const DEFAULT_HOST = '127.0.0.1';
 
 function log(tag, msg, data) {
   if (!LOG_VERBOSE && tag !== 'ERROR') return;
@@ -26,6 +27,7 @@ function log(tag, msg, data) {
 }
 
 function startServer(port, openBrowser = true) {
+  const host = process.env.CODEDASH_HOST || DEFAULT_HOST;
   const server = http.createServer((req, res) => {
     const parsed = new URL(req.url, `http://localhost:${port}`);
     const pathname = parsed.pathname;
@@ -370,9 +372,10 @@ function startServer(port, openBrowser = true) {
     }
   });
 
-  server.listen(port, '127.0.0.1', () => {
+  server.listen(port, host, () => {
     console.log('');
     console.log('  \x1b[36m\x1b[1mcodedash\x1b[0m — Claude & Codex Sessions Dashboard');
+    console.log(`  \x1b[2mbind ${host}:${port}\x1b[0m`);
     console.log(`  \x1b[2mhttp://localhost:${port}\x1b[0m`);
     console.log('  \x1b[2mPress Ctrl+C to stop\x1b[0m');
     console.log('');

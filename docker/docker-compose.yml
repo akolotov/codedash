@@ -1,0 +1,14 @@
+services:
+  codedash:
+    image: ghcr.io/vakovalskii/codedash
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: codedash
+    restart: unless-stopped
+    environment:
+      HOME: /root
+      CODEDASH_HOST: 0.0.0.0
+      CODEDASH_LOG: "1"
+    ports:
+      - "3847:3847"
