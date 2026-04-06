@@ -378,7 +378,8 @@ body {
     flex-shrink: 0;
     display: none;
 }
-.card:hover .card-checkbox,
+.select-mode .card:hover .card-checkbox,
+.select-mode .card.selected .card-checkbox,
 .card.selected .card-checkbox {
     display: inline-block;
 }
@@ -1614,10 +1615,13 @@ body {
     border-top: 1px solid var(--border);
     margin-top: 10px;
     padding-top: 10px;
-    max-height: 300px;
+    max-height: 200px;
     overflow-y: auto;
     animation: fadeIn 0.2s ease;
 }
+
+/* Ensure card clips expanded content */
+.card { overflow: hidden; }
 
 .card-preview-area.open {
     display: block;

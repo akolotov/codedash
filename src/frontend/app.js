@@ -1433,6 +1433,8 @@ function toggleSelectMode() {
   if (!selectMode) selectedIds.clear();
   var btn = document.getElementById('selectBtn');
   if (btn) btn.classList.toggle('active', selectMode);
+  var content = document.getElementById('content');
+  if (content) content.classList.toggle('select-mode', selectMode);
   updateBulkBar();
   render();
 }
