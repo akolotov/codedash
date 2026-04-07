@@ -4,4 +4,3 @@ services:
       - type: bind
         source: ${HOST_CURSOR_DIR}
         target: /root/.cursor
-        read_only: true

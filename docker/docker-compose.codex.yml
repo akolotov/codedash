@@ -4,4 +4,3 @@ services:
       - type: bind
         source: ${HOST_CODEX_DIR}
         target: /root/.codex
-        read_only: true

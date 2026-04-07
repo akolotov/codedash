@@ -4,4 +4,3 @@ services:
       - type: bind
         source: ${HOST_OPENCODE_DB}
         target: /root/.local/share/opencode/opencode.db
-        read_only: true

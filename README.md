@@ -34,6 +34,7 @@ Supported flags:
 - `--all` enables every supported mount
 
 The base container always listens on `0.0.0.0:3847`, so it can be reached via the host machine LAN IP when Docker publishes that port.
+Mounted agent data sources are writable inside the container so CodeDash actions like delete, convert, and settings updates work the same way as a host run.
 
 ## Supported Agents
 

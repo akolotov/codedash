@@ -4,4 +4,3 @@ services:
       - type: bind
         source: ${HOST_KIRO_DB}
         target: /root/Library/Application Support/kiro-cli/data.sqlite3
-        read_only: true
