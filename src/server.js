@@ -29,6 +29,8 @@ function log(tag, msg, data) {
 function startServer(host, port, openBrowser = true) {
   const browserUrl = getBrowserUrl(host, port);
   const server = http.createServer((req, res) => {
+    // req.url is usually relative, so this base is only for URL parsing.
+    // Keep it stable instead of reusing the bind host, which may be a wildcard listen address.
     const parsed = new URL(req.url, `http://localhost:${port}`);
     const pathname = parsed.pathname;
     const reqStart = Date.now();
