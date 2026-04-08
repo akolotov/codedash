@@ -2425,7 +2425,50 @@ function computeSessionCost(sessionId, project) {
 
 // ── Cost analytics ────────────────────────────────────────
 
+// Analytics result cache — avoids recomputing 31k sessions every request
+const ANALYTICS_CACHE_FILE = path.join(os.tmpdir(), 'codedash-analytics-cache.json');
+let _analyticsCacheResult = null;
+let _analyticsCacheKey = null;
+
+function _analyticsKey(sessions) {
+  // Key: session count + newest session mtime
+  let newest = 0;
+  for (const s of sessions) {
+    if (s.last_ts > newest) newest = s.last_ts;
+  }
+  return sessions.length + ':' + newest;
+}
+
 function getCostAnalytics(sessions) {
+  // Fast cache check — if sessions haven't changed, return cached result
+  const key = _analyticsKey(sessions);
+  if (_analyticsCacheResult && _analyticsCacheKey === key) return _analyticsCacheResult;
+
+  // Try disk cache
+  if (!_analyticsCacheResult) {
+    try {
+      if (fs.existsSync(ANALYTICS_CACHE_FILE)) {
+        const cached = JSON.parse(fs.readFileSync(ANALYTICS_CACHE_FILE, 'utf8'));
+        if (cached._key === key) {
+          _analyticsCacheResult = cached.data;
+          _analyticsCacheKey = key;
+          return cached.data;
+        }
+      }
+    } catch {}
+  }
+
+  const result = _computeCostAnalytics(sessions);
+
+  // Save to cache
+  _analyticsCacheResult = result;
+  _analyticsCacheKey = key;
+  try { fs.writeFileSync(ANALYTICS_CACHE_FILE, JSON.stringify({ _key: key, data: result })); } catch {}
+
+  return result;
+}
+
+function _computeCostAnalytics(sessions) {
   const byDay = {};
   const byProject = {};
   const byWeek = {};
@@ -2837,7 +2880,37 @@ function _computeSessionDailyBreakdown(s, found) {
   return { msgsByDay, tsByDay };
 }
 
+// Daily stats result cache
+const DAILY_RESULT_CACHE_FILE = path.join(os.tmpdir(), 'codedash-daily-result-cache.json');
+let _dailyResultCache = null;
+let _dailyResultCacheKey = null;
+
 function getDailyStats(sessions) {
+  const key = _analyticsKey(sessions);
+  if (_dailyResultCache && _dailyResultCacheKey === key) return _dailyResultCache;
+
+  // Try disk cache
+  if (!_dailyResultCache) {
+    try {
+      if (fs.existsSync(DAILY_RESULT_CACHE_FILE)) {
+        const cached = JSON.parse(fs.readFileSync(DAILY_RESULT_CACHE_FILE, 'utf8'));
+        if (cached._key === key) {
+          _dailyResultCache = cached.data;
+          _dailyResultCacheKey = key;
+          return cached.data;
+        }
+      }
+    } catch {}
+  }
+
+  const result = _computeDailyStats(sessions);
+  _dailyResultCache = result;
+  _dailyResultCacheKey = key;
+  try { fs.writeFileSync(DAILY_RESULT_CACHE_FILE, JSON.stringify({ _key: key, data: result })); } catch {}
+  return result;
+}
+
+function _computeDailyStats(sessions) {
   const byDay = {};
   const ensureDay = (date) => {
     if (!byDay[date]) byDay[date] = { date, sessions: 0, messages: 0, hours: 0, cost: 0, agents: {} };
