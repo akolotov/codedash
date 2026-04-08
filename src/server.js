@@ -72,7 +72,9 @@ function startServer(host, port, openBrowser = true) {
       const sessions = loadSessions();
       const byTool = {};
       sessions.forEach(s => { byTool[s.tool] = (byTool[s.tool] || 0) + 1; });
-      log('DATA', `loaded ${sessions.length} sessions`, byTool);
+      log('DATA', `loaded ${sessions.length} sessions${sessions._loading ? ' (cursor loading...)' : ''}`, byTool);
+      // Send _loading flag as header to avoid polluting array response
+      if (sessions._loading) res.setHeader('X-Loading', '1');
       json(res, sessions);
     }
 
@@ -439,8 +441,10 @@ function startServer(host, port, openBrowser = true) {
       }
     }
 
-    // Anonymous heartbeat — count active installs
-    sendHeartbeat();
+    // Delayed heartbeat + auto-sync (don't block startup)
+    setTimeout(sendHeartbeat, 5000);
+    setTimeout(autoSync, 15000); // first sync 15s after start
+    setInterval(autoSync, 300000); // then every 5 min
   });
 }
 
@@ -449,15 +453,11 @@ function sendHeartbeat() {
     const { getOrCreateAnonId } = require('./data');
     const anon = getOrCreateAnonId();
     const pkg = require('../package.json');
-    const sessions = require('./data').loadSessions();
-    const agentCounts = {};
-    sessions.forEach(s => { agentCounts[s.tool] = (agentCounts[s.tool] || 0) + 1; });
 
     const body = JSON.stringify({
       anonId: anon.id,
       version: pkg.version,
       platform: process.platform,
-      agents: agentCounts,
     });
 
     const req = https.request({
@@ -466,9 +466,19 @@ function sendHeartbeat() {
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
       timeout: 5000,
     });
-    req.on('error', () => {}); // silent fail
+    req.on('error', () => {});
     req.write(body);
     req.end();
+  } catch {}
+}
+
+function autoSync() {
+  try {
+    const profile = loadGitHubProfile();
+    if (!profile || !profile.authenticated) return; // not connected — skip
+    syncLeaderboard().then(() => {
+      log('SYNC', 'Auto-sync OK');
+    }).catch(() => {});
   } catch {}
 }
 
@@ -653,14 +663,19 @@ async function syncLeaderboard() {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
+        log('SYNC', `Response status=${res.statusCode} body=${data.slice(0, 500)}`);
+        if (res.statusCode >= 400) {
+          reject(new Error(`Leaderboard API ${res.statusCode}: ${data.slice(0, 200)}`));
+          return;
+        }
         try {
           const r = JSON.parse(data);
           log('SYNC', `Pushed stats to leaderboard as @${profile.username}`);
           resolve(r);
-        } catch { reject(new Error('Bad response')); }
+        } catch { reject(new Error('Bad response: ' + data.slice(0, 200))); }
       });
     });
-    req.on('error', reject);
+    req.on('error', (e) => { log('SYNC', `Request error: ${e.message}`); reject(e); });
     req.write(body);
     req.end();
   });

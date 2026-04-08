@@ -45,6 +45,14 @@ const KIRO_DB = path.join(ALL_HOMES[0], 'Library', 'Application Support', 'kiro-
 const CURSOR_DIR = path.join(ALL_HOMES[0], '.cursor');
 const CURSOR_PROJECTS = path.join(CURSOR_DIR, 'projects');
 const CURSOR_CHATS = path.join(CURSOR_DIR, 'chats');
+// Cursor global DB path varies by OS: macOS ~/Library/Application Support, Linux ~/.config, Windows %APPDATA%
+const CURSOR_APP_DATA = process.platform === 'darwin'
+  ? path.join(ALL_HOMES[0], 'Library', 'Application Support', 'Cursor')
+  : process.platform === 'win32'
+    ? path.join(ALL_HOMES[0], 'AppData', 'Roaming', 'Cursor')
+    : path.join(ALL_HOMES[0], '.config', 'Cursor');
+const CURSOR_GLOBAL_DB = path.join(CURSOR_APP_DATA, 'User', 'globalStorage', 'state.vscdb');
+const CURSOR_WORKSPACE_STORAGE = path.join(CURSOR_APP_DATA, 'User', 'workspaceStorage');
 const HISTORY_FILE = path.join(CLAUDE_DIR, 'history.jsonl');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
 
@@ -90,13 +98,49 @@ function parseOpenCodeMcpServer(toolName) {
   return toolName.slice(0, idx);
 }
 
+// Disk cache for parsed Claude session files (keyed by path + mtime + size)
+const PARSED_CACHE_FILE = path.join(os.tmpdir(), 'codedash-parsed-cache.json');
+let _parsedDiskCache = null;
+let _parsedDiskCacheDirty = false;
+// Reverse index: file path -> cache key (avoids repeated fs.statSync)
+const _fileCacheKeyIndex = {};
+
+function _loadParsedDiskCache() {
+  if (_parsedDiskCache) return;
+  try {
+    if (fs.existsSync(PARSED_CACHE_FILE)) {
+      _parsedDiskCache = JSON.parse(fs.readFileSync(PARSED_CACHE_FILE, 'utf8'));
+    }
+  } catch {}
+  if (!_parsedDiskCache) _parsedDiskCache = {};
+}
+
+function _saveParsedDiskCache() {
+  if (!_parsedDiskCacheDirty || !_parsedDiskCache) return;
+  try {
+    fs.writeFileSync(PARSED_CACHE_FILE, JSON.stringify(_parsedDiskCache));
+    _parsedDiskCacheDirty = false;
+  } catch {}
+}
+
 function parseClaudeSessionFile(sessionFile) {
   if (!fs.existsSync(sessionFile)) return null;
 
   let stat;
-  let lines;
   try {
     stat = fs.statSync(sessionFile);
+  } catch {
+    return null;
+  }
+
+  // Check disk cache (keyed by file path + mtime + size)
+  _loadParsedDiskCache();
+  const cacheKey = sessionFile + '|' + stat.mtimeMs + '|' + stat.size;
+  _fileCacheKeyIndex[sessionFile] = cacheKey;
+  if (_parsedDiskCache[cacheKey]) return _parsedDiskCache[cacheKey];
+
+  let lines;
+  try {
     lines = readLines(sessionFile);
   } catch {
     return null;
@@ -108,6 +152,7 @@ function parseClaudeSessionFile(sessionFile) {
   let customTitle = '';
   let firstTs = stat.mtimeMs;
   let lastTs = stat.mtimeMs;
+  let userMsgCount = 0;
   let entrypointFound = false;
   let worktreeOriginalCwd = '';
   const mcpSet = new Set();
@@ -117,6 +162,7 @@ function parseClaudeSessionFile(sessionFile) {
     try {
       const entry = JSON.parse(line);
       if (entry.type === 'user' || entry.type === 'assistant') msgCount++;
+      if (entry.type === 'user') userMsgCount++;
       if (entry.timestamp) {
         if (entry.timestamp < firstTs) firstTs = entry.timestamp;
         if (entry.timestamp > lastTs) lastTs = entry.timestamp;
@@ -161,10 +207,11 @@ function parseClaudeSessionFile(sessionFile) {
     } catch {}
   }
 
-  return {
+  const result = {
     projectPath,
     tool,
     msgCount,
+    userMsgCount,
     firstMsg,
     customTitle,
     firstTs,
@@ -174,6 +221,11 @@ function parseClaudeSessionFile(sessionFile) {
     mcpServers: Array.from(mcpSet),
     skills: Array.from(skillSet),
   };
+
+  // Cache to disk
+  _parsedDiskCache[cacheKey] = result;
+  _parsedDiskCacheDirty = true;
+  return result;
 }
 
 function mergeClaudeSessionDetail(session, summary, sessionFile) {
@@ -183,6 +235,7 @@ function mergeClaudeSessionDetail(session, summary, sessionFile) {
   session.has_detail = true;
   session.file_size = summary.fileSize;
   session.detail_messages = summary.msgCount;
+  session.user_messages = summary.userMsgCount || 0;
   session._session_file = sessionFile;
   session.mcp_servers = summary.mcpServers || [];
   session.skills = summary.skills || [];
@@ -562,8 +615,79 @@ function decodeCursorProjectFolderKey(proj) {
   return cwd;
 }
 
+// Build composerId -> project path mapping from Cursor workspace storage
+// Uses disk cache to avoid querying 190+ SQLite files on every startup
+let _cursorWsMapCache = null;
+const CURSOR_WS_MAP_CACHE_FILE = path.join(os.tmpdir(), 'codedash-cursor-ws-map.json');
+const CURSOR_WS_MAP_TTL = 600000; // 10 minutes
+
+function buildCursorWorkspaceMap() {
+  if (_cursorWsMapCache) return _cursorWsMapCache;
+
+  // Try loading from disk cache first (~1ms vs ~1500ms full rebuild)
+  try {
+    if (fs.existsSync(CURSOR_WS_MAP_CACHE_FILE)) {
+      const cached = JSON.parse(fs.readFileSync(CURSOR_WS_MAP_CACHE_FILE, 'utf8'));
+      if (cached._ts && (Date.now() - cached._ts) < CURSOR_WS_MAP_TTL) {
+        delete cached._ts;
+        _cursorWsMapCache = cached;
+        return cached;
+      }
+    }
+  } catch {}
+
+  const map = {}; // composerId -> projectPath
+  if (!fs.existsSync(CURSOR_WORKSPACE_STORAGE)) return map;
+
+  try {
+    // Step 1: Read all workspace.json files (fast fs reads, ~10ms)
+    const hashToFolder = {};
+    for (const hash of fs.readdirSync(CURSOR_WORKSPACE_STORAGE)) {
+      const wsJson = path.join(CURSOR_WORKSPACE_STORAGE, hash, 'workspace.json');
+      try {
+        const wsData = JSON.parse(fs.readFileSync(wsJson, 'utf8'));
+        let folder = wsData.folder || '';
+        if (folder.startsWith('file://')) {
+          folder = decodeURIComponent(folder.replace('file://', ''));
+        } else if (folder.startsWith('vscode-remote://')) {
+          const m = folder.match(/vscode-remote:\/\/[^/]+(\/.*)/);
+          folder = m ? decodeURIComponent(m[1]) : '';
+        }
+        if (folder) hashToFolder[hash] = folder;
+      } catch {}
+    }
+
+    // Step 2: Query workspace state.vscdb files for composer IDs
+    for (const hash of Object.keys(hashToFolder)) {
+      const wsDb = path.join(CURSOR_WORKSPACE_STORAGE, hash, 'state.vscdb');
+      if (!fs.existsSync(wsDb)) continue;
+      try {
+        const raw = execFileSync('sqlite3', [
+          wsDb,
+          "SELECT value FROM ItemTable WHERE key = 'composer.composerData'"
+        ], { encoding: 'utf8', timeout: 2000, windowsHide: true }).trim();
+        if (!raw) continue;
+        const data = JSON.parse(raw);
+        for (const c of (data.allComposers || [])) {
+          if (c.composerId) map[c.composerId] = hashToFolder[hash];
+        }
+      } catch {}
+    }
+  } catch {}
+
+  _cursorWsMapCache = map;
+
+  // Save to disk cache for fast startup next time
+  try {
+    fs.writeFileSync(CURSOR_WS_MAP_CACHE_FILE, JSON.stringify(Object.assign({ _ts: Date.now() }, map)));
+  } catch {}
+
+  return map;
+}
+
 function scanCursorSessions() {
   const sessions = [];
+  const seenIds = new Set();
 
   // Scan ~/.cursor/projects/*/agent-transcripts/*/*.jsonl
   if (fs.existsSync(CURSOR_PROJECTS)) {
@@ -598,6 +722,7 @@ function scanCursorSessions() {
             msgCount = readLines(sessFile).length;
           } catch {}
 
+          seenIds.add(sessDir);
           sessions.push({
             id: sessDir,
             tool: 'cursor',
@@ -647,6 +772,7 @@ function scanCursorSessions() {
             msgCount = readLines(filePath).length;
           } catch {}
 
+          seenIds.add(chatDir);
           sessions.push({
             id: chatDir,
             tool: 'cursor',
@@ -666,6 +792,9 @@ function scanCursorSessions() {
       }
     } catch {}
   }
+
+  // Cursor vscdb sessions are loaded via background task (see _loadCursorVscdbInBackground)
+  // and merged into loadSessions() result when ready
 
   return sessions;
 }
@@ -693,6 +822,11 @@ function loadCursorDetail(sessionId) {
         }
       }
     }
+  }
+
+  // Try loading from global vscdb (Cursor stores most sessions here)
+  if (!filePath && fs.existsSync(CURSOR_GLOBAL_DB)) {
+    return loadCursorVscdbDetail(sessionId);
   }
 
   if (!filePath) return { messages: [] };
@@ -728,6 +862,70 @@ function loadCursorDetail(sessionId) {
   return { messages: messages.slice(0, 200) };
 }
 
+// Load Cursor session detail from global state.vscdb (composerData + bubbleId entries)
+function loadCursorVscdbDetail(sessionId) {
+  const messages = [];
+
+  try {
+    // Get bubble order from composerData
+    const cleanId = sessionId.replace(/'/g, "''");
+    const composerRaw = execFileSync('sqlite3', [
+      CURSOR_GLOBAL_DB,
+      "SELECT value FROM cursorDiskKV WHERE key = 'composerData:" + cleanId + "'"
+    ], { encoding: 'utf8', timeout: 5000, windowsHide: true }).trim();
+
+    if (!composerRaw) return { messages: [] };
+
+    const composer = JSON.parse(composerRaw);
+    const bubbleHeaders = composer.fullConversationHeadersOnly || [];
+    if (bubbleHeaders.length === 0) return { messages: [] };
+
+    // Query all bubbles for this composer in one go
+    const bubbleRows = execFileSync('sqlite3', [
+      '-separator', '\t',
+      CURSOR_GLOBAL_DB,
+      "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:" + cleanId + ":%'"
+    ], { encoding: 'utf8', timeout: 10000, maxBuffer: 50 * 1024 * 1024, windowsHide: true }).trim();
+
+    if (!bubbleRows) return { messages: [] };
+
+    // Build bubbleId -> data map
+    const bubbleMap = {};
+    for (const row of bubbleRows.split('\n')) {
+      const tabIdx = row.indexOf('\t');
+      if (tabIdx < 0) continue;
+      const key = row.slice(0, tabIdx);
+      const value = row.slice(tabIdx + 1);
+      // key format: bubbleId:<composerId>:<bubbleId>
+      const parts = key.split(':');
+      const bubbleId = parts[2];
+      if (!bubbleId) continue;
+      try {
+        bubbleMap[bubbleId] = JSON.parse(value);
+      } catch {}
+    }
+
+    // Iterate in conversation order
+    for (const header of bubbleHeaders) {
+      const bubble = bubbleMap[header.bubbleId];
+      if (!bubble) continue;
+
+      // type 1 = user, type 2 = assistant
+      const bType = bubble.type;
+      if (bType !== 1 && bType !== 2) continue;
+
+      const role = bType === 1 ? 'user' : 'assistant';
+      let text = bubble.text || '';
+      text = text.replace(/<\/?user_query>/g, '').replace(/<\/?tool_call>/g, '').trim();
+      if (!text) continue;
+
+      messages.push({ role: role, content: text.slice(0, 2000), uuid: '' });
+    }
+  } catch {}
+
+  return { messages: messages.slice(0, 200) };
+}
+
 function parseCodexSessionFile(sessionFile) {
   if (!fs.existsSync(sessionFile)) return null;
 
@@ -753,6 +951,7 @@ function parseCodexSessionFile(sessionFile) {
 
   let projectPath = '';
   let msgCount = 0;
+  let userMsgCount = 0;
   let firstMsg = '';
   let firstTs = stat.mtimeMs;
   let lastTs = stat.mtimeMs;
@@ -791,6 +990,7 @@ function parseCodexSessionFile(sessionFile) {
       if (!content || isSystemMessage(content)) continue;
 
       msgCount++;
+      if (role === 'user') userMsgCount++;
       if (!firstMsg) firstMsg = content.slice(0, 200);
     } catch {}
   }
@@ -798,6 +998,7 @@ function parseCodexSessionFile(sessionFile) {
   return {
     projectPath,
     msgCount,
+    userMsgCount,
     firstMsg,
     firstTs,
     lastTs,
@@ -868,6 +1069,7 @@ function scanCodexSessions() {
           existing.file_size = summary.fileSize;
           existing.messages = summary.msgCount;
           existing.detail_messages = summary.msgCount;
+          existing.user_messages = summary.userMsgCount || 0;
           if (codexTitles[sid]) {
             existing.first_message = codexTitles[sid];
           } else if (summary.firstMsg && !existing.first_message) {
@@ -895,6 +1097,7 @@ function scanCodexSessions() {
             has_detail: true,
             file_size: summary.fileSize,
             detail_messages: summary.msgCount,
+            user_messages: summary.userMsgCount || 0,
             mcp_servers: summary.mcpServers || [],
             skills: [],
           });
@@ -918,10 +1121,36 @@ function scanCodexSessions() {
 //      from the session cwd string. Works without git for standard worktree layouts.
 
 const _gitRootCache = {};
+const GIT_ROOT_CACHE_FILE = path.join(os.tmpdir(), 'codedash-gitroot-cache.json');
+let _gitRootDiskCache = null;
+
+function _loadGitRootDiskCache() {
+  if (_gitRootDiskCache) return;
+  try {
+    if (fs.existsSync(GIT_ROOT_CACHE_FILE)) {
+      _gitRootDiskCache = JSON.parse(fs.readFileSync(GIT_ROOT_CACHE_FILE, 'utf8'));
+      // Pre-fill memory cache from disk
+      Object.assign(_gitRootCache, _gitRootDiskCache);
+    }
+  } catch {}
+  if (!_gitRootDiskCache) _gitRootDiskCache = {};
+}
+
+function _saveGitRootDiskCache() {
+  try {
+    fs.writeFileSync(GIT_ROOT_CACHE_FILE, JSON.stringify(_gitRootCache));
+  } catch {}
+}
 
 function resolveGitRoot(projectPath) {
   if (!projectPath) return '';
+  _loadGitRootDiskCache();
   if (_gitRootCache[projectPath] !== undefined) return _gitRootCache[projectPath];
+  // Skip remote/non-existent paths
+  if (!fs.existsSync(projectPath)) {
+    _gitRootCache[projectPath] = '';
+    return '';
+  }
   try {
     const root = execFileSync('git', ['-C', projectPath, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8', timeout: 2000, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']
@@ -929,7 +1158,6 @@ function resolveGitRoot(projectPath) {
     _gitRootCache[projectPath] = root;
     return root;
   } catch {
-    // git not available or project path not mounted (e.g. containerised env) — fall back gracefully
     _gitRootCache[projectPath] = '';
     return '';
   }
@@ -978,6 +1206,137 @@ function getProjectGitInfo(projectPath) {
 let _sessionsCache = null;
 let _sessionsCacheTs = 0;
 const SESSIONS_CACHE_TTL = 10000; // 10 seconds
+
+// Progressive loading: cursor vscdb sessions load in background
+let _cursorVscdbSessions = null;
+let _cursorVscdbLoading = false;
+
+function _loadCursorVscdbInBackground() {
+  if (_cursorVscdbLoading || _cursorVscdbSessions) return;
+  if (!fs.existsSync(CURSOR_GLOBAL_DB)) { _cursorVscdbSessions = []; return; }
+  _cursorVscdbLoading = true;
+
+  // Workspace map from disk cache is instant (~1ms), only global DB query is slow
+  const wsMap = buildCursorWorkspaceMap();
+  const homedir = os.homedir();
+
+  // Async sqlite3 queries — do NOT block the event loop
+  // Query 1: session metadata, Query 2: exact user bubble count per composer
+  const query = "SELECT json_extract(value, '$.composerId'), json_extract(value, '$.name'), json_extract(value, '$.createdAt'), json_extract(value, '$.lastUpdatedAt'), json_array_length(json_extract(value, '$.fullConversationHeadersOnly')) FROM cursorDiskKV WHERE key LIKE 'composerData:%'";
+
+  const cp = require('child_process');
+  cp.execFile('sqlite3', [
+    '-separator', '\t', CURSOR_GLOBAL_DB, query
+  ], { encoding: 'utf8', timeout: 15000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+  function(err, stdout) {
+    // Query 2: user bubble counts + token totals per composer (combined for efficiency)
+    const statsQuery = "SELECT substr(key, 10, 36) as cid, " +
+      "sum(CASE WHEN json_extract(value, '$.type') = 1 THEN 1 ELSE 0 END), " +
+      "sum(CASE WHEN json_extract(value, '$.tokenCount.inputTokens') > 0 THEN json_extract(value, '$.tokenCount.inputTokens') ELSE 0 END), " +
+      "sum(CASE WHEN json_extract(value, '$.tokenCount.outputTokens') > 0 THEN json_extract(value, '$.tokenCount.outputTokens') ELSE 0 END) " +
+      "FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' GROUP BY cid";
+
+    cp.execFile('sqlite3', [
+      '-separator', '\t', CURSOR_GLOBAL_DB, statsQuery
+    ], { encoding: 'utf8', timeout: 30000, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
+    function(err2, stdout2) {
+    // Build per-composer stats from query 2
+    const composerStats = {}; // { userCount, inputTokens, outputTokens }
+    if (stdout2) {
+      for (const row of stdout2.trim().split('\n')) {
+        const cols = row.split('\t');
+        if (cols.length < 4) continue;
+        composerStats[cols[0]] = {
+          userCount: parseInt(cols[1]) || 0,
+          inputTokens: parseInt(cols[2]) || 0,
+          outputTokens: parseInt(cols[3]) || 0,
+        };
+      }
+    }
+
+    // Build model map from composerData (query 1 already has this via the main query)
+    // We need to add model to the main query — for now extract from sessions metadata
+    // Query 3: models per composer (lightweight)
+    const modelQuery = "SELECT json_extract(value, '$.composerId'), json_extract(value, '$.modelConfig.modelName') FROM cursorDiskKV WHERE key LIKE 'composerData:%'";
+
+    cp.execFile('sqlite3', [
+      '-separator', '\t', CURSOR_GLOBAL_DB, modelQuery
+    ], { encoding: 'utf8', timeout: 10000, maxBuffer: 5 * 1024 * 1024, windowsHide: true },
+    function(err3, stdout3) {
+    const composerModels = {};
+    if (stdout3) {
+      for (const row of stdout3.trim().split('\n')) {
+        const tabIdx = row.indexOf('\t');
+        if (tabIdx > 0) composerModels[row.slice(0, tabIdx)] = row.slice(tabIdx + 1) || '';
+      }
+    }
+
+    try {
+      const results = [];
+      const rows = (stdout || '').trim();
+      if (rows) {
+        for (const row of rows.split('\n')) {
+          const cols = row.split('\t');
+          if (cols.length < 5) continue;
+          const composerId = cols[0];
+          if (!composerId) continue;
+          const msgCount = parseInt(cols[4]) || 0;
+          if (msgCount === 0) continue;
+          const projectPath = wsMap[composerId] || '';
+          const stats = composerStats[composerId] || {};
+          results.push({
+            id: composerId,
+            tool: 'cursor',
+            project: projectPath,
+            project_short: projectPath ? projectPath.replace(homedir, '~') : '',
+            first_ts: parseInt(cols[2]) || 0,
+            last_ts: parseInt(cols[3]) || parseInt(cols[2]) || 0,
+            messages: msgCount,
+            first_message: (cols[1] || '').slice(0, 200),
+            has_detail: true,
+            file_size: 0,
+            detail_messages: msgCount,
+            user_messages: stats.userCount || 0,
+            _cursor_vscdb: true,
+            _cursor_input_tokens: stats.inputTokens || 0,
+            _cursor_output_tokens: stats.outputTokens || 0,
+            _cursor_model: composerModels[composerId] || '',
+          });
+        }
+      }
+      _cursorVscdbSessions = results;
+    } catch {
+      _cursorVscdbSessions = [];
+    }
+    _cursorVscdbLoading = false;
+    // Merge into existing cache instead of full invalidation
+    if (_sessionsCache && _cursorVscdbSessions && _cursorVscdbSessions.length > 0) {
+      const existingIds = new Set(_sessionsCache.map(function(s) { return s.id; }));
+      const newSessions = [];
+      for (var i = 0; i < _cursorVscdbSessions.length; i++) {
+        var cs = _cursorVscdbSessions[i];
+        if (existingIds.has(cs.id)) continue;
+        cs.first_time = new Date(cs.first_ts).toLocaleString('sv-SE').slice(0, 16);
+        cs.last_time = new Date(cs.last_ts).toLocaleString('sv-SE').slice(0, 16);
+        var dt = new Date(cs.last_ts);
+        cs.date = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+        cs.git_root = '';
+        if (!cs.mcp_servers) cs.mcp_servers = [];
+        if (!cs.skills) cs.skills = [];
+        newSessions.push(cs);
+      }
+      if (newSessions.length > 0) {
+        _sessionsCache = _sessionsCache.concat(newSessions).sort(function(a, b) { return b.last_ts - a.last_ts; });
+        // Keep the same cache timestamp — no full rebuild needed
+      }
+    } else {
+      _sessionsCache = null;
+      _sessionsCacheTs = 0;
+    }
+    }); // end execFile query 3 (models)
+    }); // end execFile query 2 (stats)
+  }); // end execFile query 1 (sessions)
+}
 
 function loadSessions() {
   const now = Date.now();
@@ -1127,29 +1486,25 @@ function loadSessions() {
   }
 
   // Enrich Claude sessions with detail file info
+  // Build file index once to avoid O(sessions*projects) existsSync scans
+  _buildSessionFileIndex();
   for (const [sid, s] of Object.entries(sessions)) {
     if (s.tool !== 'claude' && s.tool !== 'claude-ext') continue;
     let sessionFile = '';
-    if (s._session_file && fs.existsSync(s._session_file)) {
+    if (s._session_file) {
       sessionFile = s._session_file;
-    } else if (s.project) {
-      const claudeDir = s._claude_dir || CLAUDE_DIR;
-      const projectsDir = path.join(claudeDir, 'projects');
-      const projectKey = s.project.replace(/[^a-zA-Z0-9-]/g, '-');
-      const candidate = path.join(projectsDir, projectKey, `${sid}.jsonl`);
-      if (fs.existsSync(candidate)) sessionFile = candidate;
-    }
-    if (!sessionFile) {
-      const found = findSessionFile(sid, s.project);
-      if (found && found.format === 'claude') sessionFile = found.file;
+    } else {
+      // Use pre-built index instead of scanning dirs
+      const indexed = _sessionFileIndex[sid];
+      if (indexed && indexed.format === 'claude') sessionFile = indexed.file;
     }
 
-    if (fs.existsSync(sessionFile)) {
+    if (sessionFile) {
       const summary = parseClaudeSessionFile(sessionFile);
       if (summary) mergeClaudeSessionDetail(s, summary, sessionFile);
       else {
         s.has_detail = true;
-        s.file_size = fs.statSync(sessionFile).size;
+        try { s.file_size = fs.statSync(sessionFile).size; } catch { s.file_size = 0; }
         s._session_file = sessionFile;
       }
     } else if (!s.has_detail) {
@@ -1207,6 +1562,17 @@ function loadSessions() {
     if (!s.skills) s.skills = [];
   }
 
+  // Merge background-loaded Cursor vscdb sessions (progressive loading)
+  const existingIds = new Set(Object.keys(sessions));
+  if (_cursorVscdbSessions) {
+    for (const cs of _cursorVscdbSessions) {
+      if (!existingIds.has(cs.id)) sessions[cs.id] = cs;
+    }
+  } else {
+    // Kick off background loading if not started yet
+    _loadCursorVscdbInBackground();
+  }
+
   const result = Object.values(sessions).sort((a, b) => b.last_ts - a.last_ts);
 
   // Collect unique project paths and resolve git roots in one pass
@@ -1221,6 +1587,13 @@ function loadSessions() {
     // Priority: worktree-state.originalCwd (container-safe) > git rev-parse > path heuristic (frontend)
     s.git_root = s.worktree_original_cwd || (s.project ? (_gitRootCache[s.project] || '') : '');
   }
+
+  // Flag for frontend: true = cursor vscdb still loading, will have more data soon
+  result._loading = !_cursorVscdbSessions && _cursorVscdbLoading;
+
+  // Flush disk caches
+  _saveParsedDiskCache();
+  _saveGitRootDiskCache();
 
   _sessionsCache = result;
   _sessionsCacheTs = Date.now();
@@ -1385,6 +1758,24 @@ function getGitCommits(projectDir, fromTs, toTs) {
 
 function exportSessionMarkdown(sessionId, project) {
   const found = findSessionFile(sessionId, project);
+
+  // For non-Claude formats, use the detail loader for markdown export
+  if (found && found.format !== 'claude') {
+    const detail =
+      found.format === 'cursor' ? loadCursorDetail(sessionId) :
+      found.format === 'opencode' ? loadOpenCodeDetail(sessionId) :
+      found.format === 'kiro' ? loadKiroDetail(sessionId) :
+      null;
+    if (detail && detail.messages && detail.messages.length > 0) {
+      const parts = [`# Session ${sessionId}\n\n**Project:** ${project || '(none)'}\n`];
+      for (const msg of detail.messages) {
+        const header = msg.role === 'user' ? '## User' : '## Assistant';
+        parts.push(`\n${header}\n\n${msg.content}\n`);
+      }
+      return parts.join('');
+    }
+  }
+
   if (!found || found.format !== 'claude' || !fs.existsSync(found.file)) {
     return `# Session ${sessionId}\n\nSession file not found.\n`;
   }
@@ -1418,32 +1809,92 @@ function exportSessionMarkdown(sessionId, project) {
 
 // ── Session Preview (first N messages, lightweight) ────────
 
+// Session file index: sessionId -> file path (built once, avoids O(sessions*projects) scans)
+let _sessionFileIndex = null;
+let _sessionFileIndexTs = 0;
+const SESSION_FILE_INDEX_TTL = 30000; // 30 seconds
+
+function _buildSessionFileIndex() {
+  const now = Date.now();
+  if (_sessionFileIndex && (now - _sessionFileIndexTs) < SESSION_FILE_INDEX_TTL) return;
+
+  _sessionFileIndex = {};
+  // Index Claude project files
+  const allProjectDirs = [PROJECTS_DIR];
+  for (const extraDir of EXTRA_CLAUDE_DIRS) {
+    allProjectDirs.push(path.join(extraDir, 'projects'));
+  }
+  for (const projDir of allProjectDirs) {
+    if (!fs.existsSync(projDir)) continue;
+    try {
+      for (const proj of fs.readdirSync(projDir)) {
+        const dir = path.join(projDir, proj);
+        try {
+          if (!fs.statSync(dir).isDirectory()) continue;
+          for (const file of fs.readdirSync(dir)) {
+            if (!file.endsWith('.jsonl')) continue;
+            const sid = file.replace('.jsonl', '');
+            if (!_sessionFileIndex[sid]) {
+              _sessionFileIndex[sid] = { file: path.join(dir, file), format: 'claude' };
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  // Index Cursor transcript files
+  if (fs.existsSync(CURSOR_PROJECTS)) {
+    try {
+      for (const proj of fs.readdirSync(CURSOR_PROJECTS)) {
+        const transcriptsDir = path.join(CURSOR_PROJECTS, proj, 'agent-transcripts');
+        if (!fs.existsSync(transcriptsDir)) continue;
+        try {
+          for (const sessDir of fs.readdirSync(transcriptsDir)) {
+            const f = path.join(transcriptsDir, sessDir, sessDir + '.jsonl');
+            if (fs.existsSync(f)) _sessionFileIndex[sessDir] = { file: f, format: 'cursor' };
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  // Index Cursor chat files
+  if (fs.existsSync(CURSOR_CHATS)) {
+    try {
+      for (const chatDir of fs.readdirSync(CURSOR_CHATS)) {
+        const fullDir = path.join(CURSOR_CHATS, chatDir);
+        try {
+          if (!fs.statSync(fullDir).isDirectory()) continue;
+          for (const f of fs.readdirSync(fullDir)) {
+            if (f.endsWith('.jsonl') || f.endsWith('.json')) {
+              _sessionFileIndex[chatDir] = { file: path.join(fullDir, f), format: 'cursor' };
+              break;
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  _sessionFileIndexTs = now;
+}
+
 function findSessionFile(sessionId, project) {
-  // Try Claude projects dir
+  _buildSessionFileIndex();
+
+  // Fast index lookup
+  if (_sessionFileIndex[sessionId]) return _sessionFileIndex[sessionId];
+
+  // Try Claude projects dir (direct path if project known)
   if (project) {
     const projectKey = project.replace(/[^a-zA-Z0-9-]/g, '-');
     const claudeFile = path.join(PROJECTS_DIR, projectKey, `${sessionId}.jsonl`);
     if (fs.existsSync(claudeFile)) return { file: claudeFile, format: 'claude' };
   }
 
-  // Try all Claude project dirs
-  if (fs.existsSync(PROJECTS_DIR)) {
-    for (const proj of fs.readdirSync(PROJECTS_DIR)) {
-      const f = path.join(PROJECTS_DIR, proj, `${sessionId}.jsonl`);
-      if (fs.existsSync(f)) return { file: f, format: 'claude' };
-    }
-  }
-
-  // WSL: try extra Claude dirs
-  for (const extraDir of EXTRA_CLAUDE_DIRS) {
-    const extraProjects = path.join(extraDir, 'projects');
-    if (fs.existsSync(extraProjects)) {
-      for (const proj of fs.readdirSync(extraProjects)) {
-        const f = path.join(extraProjects, proj, `${sessionId}.jsonl`);
-        if (fs.existsSync(f)) return { file: f, format: 'claude' };
-      }
-    }
-  }
+  // Extra Claude dirs and Cursor files are already in the index.
+  // Only Codex (date tree) and SQLite agents need fallback lookup.
 
   // Try Codex sessions dir (walk year/month/day)
   const codexSessionsDir = path.join(CODEX_DIR, 'sessions');
@@ -1469,26 +1920,20 @@ function findSessionFile(sessionId, project) {
     return { file: OPENCODE_DB, format: 'opencode', sessionId: sessionId };
   }
 
-  // Try Cursor
-  if (fs.existsSync(CURSOR_PROJECTS) || fs.existsSync(CURSOR_CHATS)) {
-    // Check projects
-    if (fs.existsSync(CURSOR_PROJECTS)) {
-      for (const proj of fs.readdirSync(CURSOR_PROJECTS)) {
-        const f = path.join(CURSOR_PROJECTS, proj, 'agent-transcripts', sessionId, sessionId + '.jsonl');
-        if (fs.existsSync(f)) return { file: f, format: 'cursor' };
+  // Cursor JSONL files are already in the index. Only check vscdb fallback.
+
+  // Try Cursor global vscdb
+  if (fs.existsSync(CURSOR_GLOBAL_DB)) {
+    try {
+      const cleanId = sessionId.replace(/'/g, "''");
+      const check = execFileSync('sqlite3', [
+        CURSOR_GLOBAL_DB,
+        "SELECT COUNT(*) FROM cursorDiskKV WHERE key = 'composerData:" + cleanId + "'"
+      ], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
+      if (parseInt(check) > 0) {
+        return { file: CURSOR_GLOBAL_DB, format: 'cursor', sessionId: sessionId };
       }
-    }
-    // Check chats
-    if (fs.existsSync(CURSOR_CHATS)) {
-      const chatDir = path.join(CURSOR_CHATS, sessionId);
-      if (fs.existsSync(chatDir)) {
-        for (const f of fs.readdirSync(chatDir)) {
-          if (f.endsWith('.jsonl') || f.endsWith('.json')) {
-            return { file: path.join(chatDir, f), format: 'cursor' };
-          }
-        }
-      }
-    }
+    } catch {}
   }
 
   // Try Kiro (SQLite)
@@ -1814,9 +2259,61 @@ function getModelPricing(model) {
 
 // ── Compute real cost from session file token usage ────────
 
+// Disk cache for computed session costs
+const COST_CACHE_FILE = path.join(os.tmpdir(), 'codedash-cost-cache.json');
+let _costDiskCache = null;
+
+function _loadCostDiskCache() {
+  if (_costDiskCache) return;
+  try {
+    if (fs.existsSync(COST_CACHE_FILE)) {
+      _costDiskCache = JSON.parse(fs.readFileSync(COST_CACHE_FILE, 'utf8'));
+    }
+  } catch {}
+  if (!_costDiskCache) _costDiskCache = {};
+}
+
+function _saveCostDiskCache() {
+  if (!_costDiskCache) return;
+  try {
+    fs.writeFileSync(COST_CACHE_FILE, JSON.stringify(_costDiskCache));
+  } catch {}
+}
+
+const EMPTY_COST = { cost: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0, contextPctSum: 0, contextTurnCount: 0, model: '' };
+
+// In-memory cost cache (reset when sessions cache resets)
+const _costMemCache = {};
+
 function computeSessionCost(sessionId, project) {
+  // Fast in-memory cache (same session never changes within request cycle)
+  if (_costMemCache[sessionId] !== undefined) return _costMemCache[sessionId];
+
   const found = findSessionFile(sessionId, project);
-  if (!found) return { cost: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0, contextPctSum: 0, contextTurnCount: 0, model: '' };
+  if (!found) { _costMemCache[sessionId] = EMPTY_COST; return EMPTY_COST; }
+
+  // Skip formats that never have cost data
+  if (found.format === 'cursor' || found.format === 'kiro') { _costMemCache[sessionId] = EMPTY_COST; return EMPTY_COST; }
+
+  // Check disk cache (keyed by file path + mtime + size for JSONL, sessionId for SQLite)
+  _loadCostDiskCache();
+  let cacheKey = '';
+  if (found.format === 'opencode') {
+    cacheKey = 'opencode:' + sessionId;
+  } else if (found.file) {
+    // Use file stat lookup (reuse from parsed cache index if available)
+    const cached = _fileCacheKeyIndex[found.file];
+    if (cached) {
+      cacheKey = cached;
+    } else {
+      try {
+        const stat = fs.statSync(found.file);
+        cacheKey = found.file + '|' + stat.mtimeMs + '|' + stat.size;
+        _fileCacheKeyIndex[found.file] = cacheKey;
+      } catch {}
+    }
+  }
+  if (cacheKey && _costDiskCache[cacheKey]) return _costDiskCache[cacheKey];
 
   let totalCost = 0;
   let totalInput = 0;
@@ -1920,7 +2417,10 @@ function computeSessionCost(sessionId, project) {
     } catch {}
   }
 
-  return { cost: totalCost, inputTokens: totalInput, outputTokens: totalOutput, cacheReadTokens: totalCacheRead, cacheCreateTokens: totalCacheCreate, contextPctSum, contextTurnCount, model };
+  const result = { cost: totalCost, inputTokens: totalInput, outputTokens: totalOutput, cacheReadTokens: totalCacheRead, cacheCreateTokens: totalCacheCreate, contextPctSum, contextTurnCount, model };
+  if (cacheKey) _costDiskCache[cacheKey] = result;
+  _costMemCache[sessionId] = result;
+  return result;
 }
 
 // ── Cost analytics ────────────────────────────────────────
@@ -1988,9 +2488,31 @@ function getCostAnalytics(sessions) {
   }
 
   for (const s of sessions) {
-    const costData = (s.tool === 'opencode' && opencodeCostCache[s.id])
-      ? opencodeCostCache[s.id]
-      : computeSessionCost(s.id, s.project);
+    let costData;
+    if (s.tool === 'opencode' && opencodeCostCache[s.id]) {
+      costData = opencodeCostCache[s.id];
+    } else if (s.tool === 'cursor') {
+      // Use real token data from Cursor vscdb if available
+      const inp = s._cursor_input_tokens || 0;
+      const out = s._cursor_output_tokens || 0;
+      if (inp > 0 || out > 0) {
+        const model = s._cursor_model || '';
+        const pricing = getModelPricing(model);
+        costData = { cost: inp * pricing.input + out * pricing.output, inputTokens: inp, outputTokens: out, cacheReadTokens: 0, cacheCreateTokens: 0, contextPctSum: 0, contextTurnCount: 0, model: model };
+      } else if (s.user_messages > 0 || s.messages > 0) {
+        // Fallback: estimate from user prompt count
+        const userMsgs = s.user_messages || Math.ceil((s.messages || 0) * 0.07);
+        const model = s._cursor_model || 'claude-sonnet';
+        const pricing = getModelPricing(model);
+        const estInput = userMsgs * 2000;
+        const estOutput = userMsgs * 1000;
+        costData = { cost: estInput * pricing.input + estOutput * pricing.output, inputTokens: estInput, outputTokens: estOutput, cacheReadTokens: 0, cacheCreateTokens: 0, contextPctSum: 0, contextTurnCount: 0, model: model + '-estimated' };
+      } else {
+        costData = EMPTY_COST;
+      }
+    } else {
+      costData = computeSessionCost(s.id, s.project);
+    }
     const cost = costData.cost;
     const tokens = costData.inputTokens + costData.outputTokens + costData.cacheReadTokens + costData.cacheCreateTokens;
     if (cost === 0 && tokens === 0) {
@@ -2013,6 +2535,7 @@ function getCostAnalytics(sessions) {
     byAgent[agent].sessions++;
     byAgent[agent].tokens += tokens;
     if (agent === 'codex') byAgent[agent].estimated = true;
+    if (agent === 'cursor' && costData.model && costData.model.includes('-estimated')) byAgent[agent].estimated = true;
     if (agent === 'opencode' && !costData.model) byAgent[agent].estimated = true;
 
     // Context % across all turns
@@ -2068,6 +2591,8 @@ function getCostAnalytics(sessions) {
     if (sc.last_ts >= now - 3600000) last1hCost += sc.cost;
     if (sc.date === todayStr) todayCost += sc.cost;
   }
+
+  _saveCostDiskCache();
 
   return {
     totalCost,
@@ -2243,12 +2768,83 @@ const fmtLocalDay = (ts) => {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 };
 
+// Disk cache for per-session daily message breakdown
+const DAILY_STATS_CACHE_FILE = path.join(os.tmpdir(), 'codedash-daily-stats-cache.json');
+let _dailyStatsDiskCache = null;
+
+function _loadDailyStatsDiskCache() {
+  if (_dailyStatsDiskCache) return;
+  try {
+    if (fs.existsSync(DAILY_STATS_CACHE_FILE)) {
+      _dailyStatsDiskCache = JSON.parse(fs.readFileSync(DAILY_STATS_CACHE_FILE, 'utf8'));
+    }
+  } catch {}
+  if (!_dailyStatsDiskCache) _dailyStatsDiskCache = {};
+}
+
+function _saveDailyStatsDiskCache() {
+  if (!_dailyStatsDiskCache) return;
+  try {
+    fs.writeFileSync(DAILY_STATS_CACHE_FILE, JSON.stringify(_dailyStatsDiskCache));
+  } catch {}
+}
+
+function _computeSessionDailyBreakdown(s, found) {
+  const msgsByDay = {};
+  const tsByDay = {};
+  try {
+    const lines = readLines(found.file);
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        let isUser = false;
+        let hasText = false;
+        let ts = 0;
+
+        if (found.format === 'claude') {
+          if (entry.type !== 'user') continue;
+          isUser = true;
+          if (entry.timestamp) ts = typeof entry.timestamp === 'number' ? entry.timestamp : new Date(entry.timestamp).getTime();
+          const c = entry.message && entry.message.content;
+          if (typeof c === 'string' && c.trim()) hasText = true;
+          else if (Array.isArray(c)) { for (const p of c) { if (p.type === 'text' && p.text && p.text.trim()) { hasText = true; break; } } }
+        } else if (found.format === 'cursor') {
+          if (entry.role !== 'user') continue;
+          isUser = true;
+          ts = s.first_ts;
+          const c = (entry.message || {}).content;
+          if (Array.isArray(c)) { for (const p of c) { if (p.type === 'text' && p.text && p.text.replace(/<\/?user_query>/g,'').trim()) { hasText = true; break; } } }
+          else if (typeof c === 'string' && c.trim()) hasText = true;
+        } else if (found.format === 'codex') {
+          if (entry.type === 'response_item' && entry.payload && entry.payload.role === 'user') {
+            isUser = true;
+            ts = s.first_ts;
+            const c = entry.payload.content;
+            if (Array.isArray(c)) { for (const p of c) { if ((p.text || '').trim()) { hasText = true; break; } } }
+          } else continue;
+        }
+
+        if (!isUser || !hasText) continue;
+        if (!ts || ts < 1000000000000) ts = s.first_ts;
+        const day = (found.format === 'claude' && ts) ? fmtLocalDay(ts) : (s.date || fmtLocalDay(s.last_ts));
+        msgsByDay[day] = (msgsByDay[day] || 0) + 1;
+        if (!tsByDay[day]) tsByDay[day] = { first: ts, last: ts };
+        if (ts < tsByDay[day].first) tsByDay[day].first = ts;
+        if (ts > tsByDay[day].last) tsByDay[day].last = ts;
+      } catch {}
+    }
+  } catch {}
+  return { msgsByDay, tsByDay };
+}
+
 function getDailyStats(sessions) {
   const byDay = {};
   const ensureDay = (date) => {
     if (!byDay[date]) byDay[date] = { date, sessions: 0, messages: 0, hours: 0, cost: 0, agents: {} };
     return byDay[date];
   };
+
+  _loadDailyStatsDiskCache();
 
   for (const s of sessions) {
     if (!s.first_ts || !s.last_ts) continue;
@@ -2260,53 +2856,21 @@ function getDailyStats(sessions) {
 
     // For sessions with detail files — read actual message timestamps
     const found = s.has_detail ? findSessionFile(s.id, s.project) : null;
-    if (found && found.format !== 'opencode' && found.format !== 'kiro' && fs.existsSync(found.file)) {
-      // Read timestamps from session file for accurate per-day breakdown
-      const msgsByDay = {};
-      const tsByDay = {};
+    if (found && found.format !== 'opencode' && found.format !== 'kiro' && found.format !== 'cursor' && fs.existsSync(found.file)) {
+      // Check disk cache for daily breakdown
+      let breakdown;
+      let dailyCacheKey = '';
       try {
-        const lines = readLines(found.file);
-        for (const line of lines) {
-          try {
-            const entry = JSON.parse(line);
-            // Detect user message across formats
-            let isUser = false;
-            let hasText = false;
-            let ts = 0;
-
-            if (found.format === 'claude') {
-              if (entry.type !== 'user') continue;
-              isUser = true;
-              if (entry.timestamp) ts = typeof entry.timestamp === 'number' ? entry.timestamp : new Date(entry.timestamp).getTime();
-              const c = entry.message && entry.message.content;
-              if (typeof c === 'string' && c.trim()) hasText = true;
-              else if (Array.isArray(c)) { for (const p of c) { if (p.type === 'text' && p.text && p.text.trim()) { hasText = true; break; } } }
-            } else if (found.format === 'cursor') {
-              if (entry.role !== 'user') continue;
-              isUser = true;
-              ts = s.first_ts; // Cursor has no per-message timestamps, use session time
-              const c = (entry.message || {}).content;
-              if (Array.isArray(c)) { for (const p of c) { if (p.type === 'text' && p.text && p.text.replace(/<\/?user_query>/g,'').trim()) { hasText = true; break; } } }
-              else if (typeof c === 'string' && c.trim()) hasText = true;
-            } else if (found.format === 'codex') {
-              if (entry.type === 'response_item' && entry.payload && entry.payload.role === 'user') {
-                isUser = true;
-                ts = s.first_ts;
-                const c = entry.payload.content;
-                if (Array.isArray(c)) { for (const p of c) { if ((p.text || '').trim()) { hasText = true; break; } } }
-              } else continue;
-            }
-
-            if (!isUser || !hasText) continue;
-            if (!ts || ts < 1000000000000) ts = s.first_ts;
-            const day = (found.format === 'claude' && ts) ? fmtLocalDay(ts) : (s.date || fmtLocalDay(s.last_ts));
-            msgsByDay[day] = (msgsByDay[day] || 0) + 1;
-            if (!tsByDay[day]) tsByDay[day] = { first: ts, last: ts };
-            if (ts < tsByDay[day].first) tsByDay[day].first = ts;
-            if (ts > tsByDay[day].last) tsByDay[day].last = ts;
-          } catch {}
-        }
+        const stat = fs.statSync(found.file);
+        dailyCacheKey = found.file + '|' + stat.mtimeMs + '|' + stat.size;
       } catch {}
+      if (dailyCacheKey && _dailyStatsDiskCache[dailyCacheKey]) {
+        breakdown = _dailyStatsDiskCache[dailyCacheKey];
+      } else {
+        breakdown = _computeSessionDailyBreakdown(s, found);
+        if (dailyCacheKey) _dailyStatsDiskCache[dailyCacheKey] = breakdown;
+      }
+      const { msgsByDay, tsByDay } = breakdown;
 
       const dayKeys = Object.keys(msgsByDay);
       if (dayKeys.length > 0) {
@@ -2328,8 +2892,13 @@ function getDailyStats(sessions) {
     const day = s.date || fmtLocalDay(s.last_ts);
     const d = ensureDay(day);
     d.sessions++;
-    // Estimate user-only prompts: roughly half of total messages
-    d.messages += Math.ceil((s.detail_messages || s.messages || 0) / 2);
+    // Use exact user_messages count if available, otherwise estimate
+    if (s.user_messages > 0) {
+      d.messages += s.user_messages;
+    } else {
+      const totalMsgEst = s.detail_messages || s.messages || 0;
+      d.messages += Math.ceil(totalMsgEst * 0.5);
+    }
     d.hours += Math.min((s.last_ts - s.first_ts) / 3600000, 16);
     d.cost += sessionCost;
     d.agents[tool] = (d.agents[tool] || 0) + 1;
@@ -2340,6 +2909,7 @@ function getDailyStats(sessions) {
     d.hours = Math.round(d.hours * 10) / 10;
     d.cost = Math.round(d.cost * 100) / 100;
   }
+  _saveDailyStatsDiskCache();
   return Object.values(byDay).sort((a, b) => b.date.localeCompare(a.date));
 }
 
