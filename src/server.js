@@ -571,7 +571,7 @@ async function githubPollToken(deviceCode) {
 function loadGitHubProfile() {
   try {
     const data = JSON.parse(fs.readFileSync(GITHUB_PROFILE_FILE, 'utf8'));
-    if (data.authenticated) return { authenticated: true, username: data.username, avatar: data.avatar, name: data.name, url: data.url };
+    if (data.authenticated) return { authenticated: true, username: data.username, avatar: data.avatar, name: data.name, url: data.url, token: data.token };
   } catch {}
   return null;
 }
@@ -602,7 +602,8 @@ async function syncLeaderboard() {
     deviceId: anon.id || require('crypto').randomUUID(),
     token: profile.token, // for server-side GitHub verification
     stats: {
-      today: stats.today,
+      today: { ...stats.today, hours: Math.min(stats.today.hours || 0, 24) },
+      week: stats.daily ? stats.daily.slice(0, 7).reduce((acc, d) => ({ messages: acc.messages + d.messages, hours: acc.hours + d.hours, cost: acc.cost + d.cost }), { messages: 0, hours: 0, cost: 0 }) : { messages: 0, hours: 0, cost: 0 },
       totals: stats.totals,
       agents: stats.agents,
       streak: stats.streak,
