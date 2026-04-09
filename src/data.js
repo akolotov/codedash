@@ -329,10 +329,11 @@ function scanOpenCodeSessions() {
     const sessionMcp = {};
     const sessionSkills = {};
     try {
-      const toolRows = execSync(
-        `sqlite3 -separator $'\\t' "${OPENCODE_DB}" "SELECT session_id, json_extract(data, '\\$.tool'), json_extract(data, '\\$.state.input.name') FROM part WHERE json_extract(data, '\\$.type') = 'tool'"`,
-        { encoding: 'utf8', timeout: 10000, maxBuffer: 50 * 1024 * 1024 }
-      ).trim();
+      const toolRows = execFileSync('sqlite3', [
+        '-separator', '\t',
+        OPENCODE_DB,
+        "SELECT session_id, json_extract(data, '$.tool'), json_extract(data, '$.state.input.name') FROM part WHERE json_extract(data, '$.type') = 'tool'"
+      ], { encoding: 'utf8', timeout: 10000, maxBuffer: 50 * 1024 * 1024, windowsHide: true }).trim();
       if (toolRows) {
         for (const tr of toolRows.split('\n')) {
           const cols = tr.split('\t');
