@@ -203,10 +203,20 @@ body {
     width: 100%;
     padding: 8px 12px;
     border-radius: 6px;
-    background: rgba(255,255,255,0.04);
+    background: var(--bg-card, rgba(255,255,255,0.04));
     color: var(--text-primary);
     border: 1px solid var(--border);
     font-size: 13px;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236e7681' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+}
+.settings-select option {
+    background: var(--bg-card, #161b22);
+    color: var(--text-primary, #e6edf3);
 }
 .settings-checkbox {
     display: flex;

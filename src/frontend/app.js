@@ -142,11 +142,11 @@ function fallbackCopyText(text) {
 }
 
 function copyText(text, successMsg) {
-  var done = function() {
+  var done = function () {
     showToast(successMsg || ('Copied: ' + text));
     return true;
   };
-  var fail = function() {
+  var fail = function () {
     if (fallbackCopyText(text)) return done();
     prompt('Copy this command:', text);
     showToast(window.isSecureContext ? 'Clipboard copy failed' : 'Clipboard unavailable on non-secure origin');
@@ -174,28 +174,38 @@ function estimateCost(fileSize) {
 
 // ── Subscription service plans (pricing as of 2025) ─────────────
 var SERVICE_PLANS = {
-  'Claude': { label: 'Claude (Anthropic)', plans: [
-    { name: 'Pro', price: 20 },
-    { name: 'Max 5×', price: 100 },
-    { name: 'Max 20×', price: 200 }
-  ]},
-  'OpenAI': { label: 'OpenAI (ChatGPT)', plans: [
-    { name: 'Plus', price: 20 },
-    { name: 'Pro', price: 200 }
-  ]},
-  'Cursor': { label: 'Cursor', plans: [
-    { name: 'Pro', price: 20 },
-    { name: 'Pro+', price: 60 },
-    { name: 'Ultra', price: 200 }
-  ]},
-  'Kiro': { label: 'Kiro', plans: [
-    { name: 'Pro', price: 20 },
-    { name: 'Pro+', price: 40 },
-    { name: 'Power', price: 200 }
-  ]},
-  'OpenCode': { label: 'OpenCode', plans: [
-    { name: 'Go', price: 10 }
-  ]}
+  'Claude': {
+    label: 'Claude (Anthropic)', plans: [
+      { name: 'Pro', price: 20 },
+      { name: 'Max 5×', price: 100 },
+      { name: 'Max 20×', price: 200 }
+    ]
+  },
+  'OpenAI': {
+    label: 'OpenAI (ChatGPT)', plans: [
+      { name: 'Plus', price: 20 },
+      { name: 'Pro', price: 200 }
+    ]
+  },
+  'Cursor': {
+    label: 'Cursor', plans: [
+      { name: 'Pro', price: 20 },
+      { name: 'Pro+', price: 60 },
+      { name: 'Ultra', price: 200 }
+    ]
+  },
+  'Kiro': {
+    label: 'Kiro', plans: [
+      { name: 'Pro', price: 20 },
+      { name: 'Pro+', price: 40 },
+      { name: 'Power', price: 200 }
+    ]
+  },
+  'OpenCode': {
+    label: 'OpenCode', plans: [
+      { name: 'Go', price: 10 }
+    ]
+  }
 };
 
 function onSubServiceChange() {
@@ -207,7 +217,7 @@ function onSubServiceChange() {
   planEl.innerHTML = '<option value="">— select plan —</option>';
   paidEl.value = '';
   if (service && SERVICE_PLANS[service]) {
-    SERVICE_PLANS[service].plans.forEach(function(p) {
+    SERVICE_PLANS[service].plans.forEach(function (p) {
       var opt = document.createElement('option');
       opt.value = p.name;
       opt.textContent = p.name + ' ($' + p.price + '/mo)';
@@ -223,7 +233,7 @@ function onSubPlanChange() {
   var service = serviceEl ? serviceEl.value : '';
   var planName = planEl ? planEl.value : '';
   if (service && planName && SERVICE_PLANS[service]) {
-    var found = SERVICE_PLANS[service].plans.find(function(p) { return p.name === planName; });
+    var found = SERVICE_PLANS[service].plans.find(function (p) { return p.name === planName; });
     if (found && paidEl) paidEl.value = found.price;
   }
 }
@@ -237,7 +247,7 @@ function getSubscriptionConfig() {
   return raw;
 }
 function saveSubscriptionConfig(cfg) { localStorage.setItem('codedash-subscription', JSON.stringify(cfg)); }
-function subTotalPaid(entries) { return entries.reduce(function(s,e){return s+(parseFloat(e.paid)||0);},0); }
+function subTotalPaid(entries) { return entries.reduce(function (s, e) { return s + (parseFloat(e.paid) || 0); }, 0); }
 function addSubEntry() {
   var service = (document.getElementById('sub-new-service').value || '').trim();
   var planEl = document.getElementById('sub-new-plan');
@@ -247,7 +257,7 @@ function addSubEntry() {
   if (!paid) return;
   var cfg = getSubscriptionConfig();
   cfg.entries.push({ service: service || '', plan: plan || 'Subscription', paid: paid, from: from });
-  cfg.entries.sort(function(a,b){return (a.from||'').localeCompare(b.from||'');});
+  cfg.entries.sort(function (a, b) { return (a.from || '').localeCompare(b.from || ''); });
   saveSubscriptionConfig(cfg);
   render();
 }
@@ -271,11 +281,11 @@ const TAG_OPTIONS = ['bug', 'feature', 'research', 'infra', 'deploy', 'review'];
 
 function showTagDropdown(event, sessionId) {
   event.stopPropagation();
-  document.querySelectorAll('.tag-dropdown').forEach(function(el) { el.remove(); });
+  document.querySelectorAll('.tag-dropdown').forEach(function (el) { el.remove(); });
   var dd = document.createElement('div');
   dd.className = 'tag-dropdown';
   var existingTags = tags[sessionId] || [];
-  dd.innerHTML = TAG_OPTIONS.map(function(t) {
+  dd.innerHTML = TAG_OPTIONS.map(function (t) {
     var has = existingTags.indexOf(t) >= 0;
     return '<div class="tag-dropdown-item" onclick="event.stopPropagation();' +
       (has ? 'removeTag' : 'addTag') + '(\'' + sessionId + '\',\'' + t + '\')">' +
@@ -288,8 +298,8 @@ function showTagDropdown(event, sessionId) {
   dd.style.left = rect.left + 'px';
 
   document.body.appendChild(dd);
-  setTimeout(function() {
-    document.addEventListener('click', function() { dd.remove(); }, { once: true });
+  setTimeout(function () {
+    document.addEventListener('click', function () { dd.remove(); }, { once: true });
   }, 0);
 }
 
@@ -297,13 +307,13 @@ function addTag(sessionId, tag) {
   if (!tags[sessionId]) tags[sessionId] = [];
   if (!tags[sessionId].includes(tag)) tags[sessionId].push(tag);
   localStorage.setItem('codedash-tags', JSON.stringify(tags));
-  document.querySelectorAll('.tag-dropdown').forEach(function(el) { el.remove(); });
+  document.querySelectorAll('.tag-dropdown').forEach(function (el) { el.remove(); });
   render();
 }
 
 function removeTag(sessionId, tag) {
   if (tags[sessionId]) {
-    tags[sessionId] = tags[sessionId].filter(function(t) { return t !== tag; });
+    tags[sessionId] = tags[sessionId].filter(function (t) { return t !== tag; });
     if (!tags[sessionId].length) delete tags[sessionId];
     localStorage.setItem('codedash-tags', JSON.stringify(tags));
     render();
@@ -335,7 +345,7 @@ function saveGroupingMode(mode) {
 }
 
 function loadLLMSettings() {
-  fetch('/api/llm-config').then(function(r) { return r.json(); }).then(function(c) {
+  fetch('/api/llm-config').then(function (r) { return r.json(); }).then(function (c) {
     var u = document.getElementById('llmUrl');
     var k = document.getElementById('llmApiKey');
     var m = document.getElementById('llmModel');
@@ -355,27 +365,27 @@ function saveLLMSettings() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
-  }).then(function() {
+  }).then(function () {
     showToast('LLM settings saved');
   });
 }
 
 function testLLMConnection() {
   // Generate title for the first available session as a test
-  var testSession = allSessions.find(function(s) { return s.has_detail && s.messages > 2; });
+  var testSession = allSessions.find(function (s) { return s.has_detail && s.messages > 2; });
   if (!testSession) { showToast('No sessions to test with'); return; }
   showToast('Testing LLM connection...');
   fetch('/api/generate-title', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId: testSession.id, project: testSession.project }),
-  }).then(function(r) { return r.json(); }).then(function(d) {
+  }).then(function (r) { return r.json(); }).then(function (d) {
     if (d.ok) {
       showToast('OK: "' + d.title + '"');
     } else {
       showToast('Error: ' + d.error);
     }
-  }).catch(function(e) { showToast('Connection failed: ' + e.message); });
+  }).catch(function (e) { showToast('Connection failed: ' + e.message); });
 }
 
 function generateTitle(sessionId, project) {
@@ -383,7 +393,7 @@ function generateTitle(sessionId, project) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId: sessionId, project: project }),
-  }).then(function(r) { return r.json(); }).then(function(d) {
+  }).then(function (r) { return r.json(); }).then(function (d) {
     if (d.ok && d.title) {
       sessionTitles[sessionId] = d.title;
       localStorage.setItem('codedash-titles', JSON.stringify(sessionTitles));
@@ -391,22 +401,22 @@ function generateTitle(sessionId, project) {
     } else {
       showToast('Title generation failed: ' + (d.error || 'unknown'));
     }
-  }).catch(function(e) { showToast('Error: ' + e.message); });
+  }).catch(function (e) { showToast('Error: ' + e.message); });
 }
 
 function generateAllTitles() {
-  var sessions = filteredSessions.filter(function(s) {
+  var sessions = filteredSessions.filter(function (s) {
     return s.has_detail && s.messages > 2 && !sessionTitles[s.id];
   }).slice(0, 20); // batch of 20
   if (!sessions.length) { showToast('All sessions already have titles'); return; }
   showToast('Generating titles for ' + sessions.length + ' sessions...');
   var done = 0;
-  sessions.forEach(function(s) {
+  sessions.forEach(function (s) {
     fetch('/api/generate-title', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId: s.id, project: s.project }),
-    }).then(function(r) { return r.json(); }).then(function(d) {
+    }).then(function (r) { return r.json(); }).then(function (d) {
       done++;
       if (d.ok && d.title) {
         sessionTitles[s.id] = d.title;
@@ -416,7 +426,7 @@ function generateAllTitles() {
         render();
         showToast('Generated ' + done + ' titles');
       }
-    }).catch(function() { done++; });
+    }).catch(function () { done++; });
   });
 }
 
@@ -449,7 +459,7 @@ async function loadTerminals() {
     if (!sel) return;
     sel.innerHTML = '';
     var saved = localStorage.getItem('codedash-terminal') || '';
-    availableTerminals.forEach(function(t) {
+    availableTerminals.forEach(function (t) {
       if (!t.available) return;
       var opt = document.createElement('option');
       opt.value = t.id;
@@ -458,7 +468,7 @@ async function loadTerminals() {
       sel.appendChild(opt);
     });
     if (!saved && availableTerminals.length > 0) {
-      var first = availableTerminals.find(function(t) { return t.available; });
+      var first = availableTerminals.find(function (t) { return t.available; });
       if (first) sel.value = first.id;
     }
   } catch (e) {
@@ -481,19 +491,19 @@ async function pollActiveSessions() {
 
     // Build new state
     var newActive = {};
-    data.forEach(function(a) {
+    data.forEach(function (a) {
       if (a.sessionId) newActive[a.sessionId] = a;
     });
 
     // Check if anything changed — skip DOM work if not
-    var newKey = data.map(function(a) { return (a.sessionId || a.pid) + ':' + a.status; }).sort().join(',');
+    var newKey = data.map(function (a) { return (a.sessionId || a.pid) + ':' + a.status; }).sort().join(',');
     if (newKey === _prevActiveKey) return;
     _prevActiveKey = newKey;
 
     activeSessions = newActive;
 
     // Only touch cards that changed
-    document.querySelectorAll('.card').forEach(function(card) {
+    document.querySelectorAll('.card').forEach(function (card) {
       var id = card.getAttribute('data-id');
       var existing = card.querySelector('.live-badge');
       var parent = card.parentElement;
@@ -542,7 +552,7 @@ async function pollActiveSessions() {
         }
       }
     });
-  } catch {}
+  } catch { }
 }
 
 var activeInterval = null;
@@ -643,7 +653,7 @@ function applyFilters() {
   }
 
   // Sort: starred first, then by search score (if searching), then by time
-  scored.sort(function(a, b) {
+  scored.sort(function (a, b) {
     var aStarred = stars.indexOf(a.session.id) >= 0 ? 1 : 0;
     var bStarred = stars.indexOf(b.session.id) >= 0 ? 1 : 0;
     if (aStarred !== bStarred) return bStarred - aStarred;
@@ -651,7 +661,7 @@ function applyFilters() {
     return b.session.last_ts - a.session.last_ts;
   });
 
-  filteredSessions = scored.map(function(x) { return x.session; });
+  filteredSessions = scored.map(function (x) { return x.session; });
 
   render();
 
@@ -664,7 +674,7 @@ function onSearch(val) {
   // Trigger deep search after debounce
   clearTimeout(deepSearchTimeout);
   if (val && val.length >= 3) {
-    deepSearchTimeout = setTimeout(function() { deepSearch(val); }, 600);
+    deepSearchTimeout = setTimeout(function () { deepSearch(val); }, 600);
   }
 }
 
@@ -678,220 +688,7 @@ function onDateFilter() {
   updateDateBtn();
 }
 
-// ── Calendar ─────────────────────────────────────────────────
-
-var calYear = new Date().getFullYear();
-var calMonth = new Date().getMonth();
-var calStart = null;
-var calEnd = null;
-var calSelecting = false;
-
-function toggleCalendar() {
-  var popup = document.getElementById('calendarPopup');
-  var btn = document.getElementById('dateBtn');
-  if (!popup || !btn) return;
-  if (popup.classList.contains('open')) {
-    popup.classList.remove('open');
-    return;
-  }
-  renderCalendar();
-  // Position popup below the button
-  var rect = btn.getBoundingClientRect();
-  var popupWidth = 280;
-  var left = rect.left;
-  // Keep within viewport
-  if (left + popupWidth > window.innerWidth - 8) {
-    left = window.innerWidth - popupWidth - 8;
-  }
-  popup.style.left = left + 'px';
-  popup.style.top = (rect.bottom + 4) + 'px';
-  popup.classList.add('open');
-  setTimeout(function() {
-    document.addEventListener('click', closeCalendarOutside, { once: true });
-  }, 0);
-}
-
-function closeCalendarOutside(e) {
-  var popup = document.getElementById('calendarPopup');
-  var btn = document.getElementById('dateBtn');
-  if (popup && !popup.contains(e.target) && btn && !btn.contains(e.target)) {
-    popup.classList.remove('open');
-  } else if (popup && popup.classList.contains('open')) {
-    document.addEventListener('click', closeCalendarOutside, { once: true });
-  }
-}
-
-function renderCalendar() {
-  var popup = document.getElementById('calendarPopup');
-  if (!popup) return;
-
-  var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  var firstDay = new Date(calYear, calMonth, 1);
-  var lastDay = new Date(calYear, calMonth + 1, 0);
-  var startWeekday = (firstDay.getDay() + 6) % 7; // Monday = 0
-  var daysInMonth = lastDay.getDate();
-  var today = new Date();
-  var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
-
-  var html = '<div class="cal-header">';
-  html += '<button class="cal-nav" onclick="event.stopPropagation();calNav(-1)">&larr;</button>';
-  html += '<span>' + monthNames[calMonth] + ' ' + calYear + '</span>';
-  html += '<button class="cal-nav" onclick="event.stopPropagation();calNav(1)">&rarr;</button>';
-  html += '</div>';
-
-  html += '<div class="cal-weekdays"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>';
-  html += '<div class="cal-days">';
-
-  var prevLastDay = new Date(calYear, calMonth, 0).getDate();
-  for (var i = startWeekday - 1; i >= 0; i--) {
-    html += '<div class="cal-day other-month">' + (prevLastDay - i) + '</div>';
-  }
-
-  for (var d = 1; d <= daysInMonth; d++) {
-    var dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-    var cls = 'cal-day';
-    if (dateStr === todayStr) cls += ' today';
-    if (calStart && calEnd) {
-      if (dateStr === calStart) cls += ' range-start';
-      if (dateStr === calEnd) cls += ' range-end';
-      if (dateStr > calStart && dateStr < calEnd) cls += ' in-range';
-      if (calStart === calEnd && dateStr === calStart) cls += ' range-start range-end';
-    } else if (calStart && dateStr === calStart) {
-      cls += ' range-start range-end';
-    }
-    html += '<div class="' + cls + '" onclick="event.stopPropagation();calPickDay(\'' + dateStr + '\')">' + d + '</div>';
-  }
-
-  var totalCells = startWeekday + daysInMonth;
-  var remaining = (7 - (totalCells % 7)) % 7;
-  for (var n = 1; n <= remaining; n++) {
-    html += '<div class="cal-day other-month">' + n + '</div>';
-  }
-  html += '</div>';
-
-  html += '<div class="cal-presets">';
-  var presets = [['All',''],['Today','0'],['7d','7'],['30d','30'],['90d','90']];
-  presets.forEach(function(p) {
-    html += '<button class="cal-preset" onclick="event.stopPropagation();calPreset(\'' + p[1] + '\')">' + p[0] + '</button>';
-  });
-  html += '</div>';
-
-  popup.innerHTML = html;
-}
-
-function calNav(dir) {
-  calMonth += dir;
-  if (calMonth < 0) { calMonth = 11; calYear--; }
-  if (calMonth > 11) { calMonth = 0; calYear++; }
-  renderCalendar();
-}
-
-function calPickDay(dateStr) {
-  if (!calSelecting) {
-    calStart = dateStr;
-    calEnd = null;
-    calSelecting = true;
-  } else {
-    if (dateStr < calStart) {
-      calEnd = calStart;
-      calStart = dateStr;
-    } else {
-      calEnd = dateStr;
-    }
-    calSelecting = false;
-  }
-  renderCalendar();
-  dateFrom = calStart || '';
-  dateTo = calEnd || calStart || '';
-  onDateFilter();
-}
-
-function calPreset(days) {
-  calSelecting = false;
-  if (!days) {
-    calStart = null;
-    calEnd = null;
-    dateFrom = '';
-    dateTo = '';
-  } else {
-    var now = new Date();
-    calEnd = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-    if (days === '0') {
-      calStart = calEnd;
-    } else {
-      var from = new Date(now.getTime() - parseInt(days) * 86400000);
-      calStart = from.getFullYear() + '-' + String(from.getMonth()+1).padStart(2,'0') + '-' + String(from.getDate()).padStart(2,'0');
-    }
-    dateFrom = calStart;
-    dateTo = calEnd;
-  }
-  renderCalendar();
-  onDateFilter();
-  var popup = document.getElementById('calendarPopup');
-  if (popup) popup.classList.remove('open');
-}
-
-function updateDateBtn() {
-  var btn = document.getElementById('dateBtn');
-  var label = document.getElementById('dateBtnLabel');
-  if (!btn || !label) return;
-  if (!dateFrom && !dateTo) {
-    label.textContent = 'All time';
-    btn.classList.remove('has-filter');
-  } else if (dateFrom === dateTo) {
-    label.textContent = dateFrom;
-    btn.classList.add('has-filter');
-  } else {
-    var f = dateFrom.slice(5) || '';
-    var t = dateTo.slice(5) || '';
-    label.textContent = f + ' \u2014 ' + t;
-    btn.classList.add('has-filter');
-  }
-}
-
-function toggleGroup() {
-  grouped = !grouped;
-  var btn = document.getElementById('groupBtn');
-  if (btn) btn.classList.toggle('active', grouped);
-  render();
-}
-
-function setView(view) {
-  // Handle tool filter views
-  if (view === 'claude-only') {
-    toolFilter = toolFilter === 'claude' ? null : 'claude';
-    currentView = 'sessions';
-  } else if (view === 'codex-only') {
-    toolFilter = toolFilter === 'codex' ? null : 'codex';
-    currentView = 'sessions';
-  } else if (view === 'cursor-only') {
-    toolFilter = toolFilter === 'cursor' ? null : 'cursor';
-    currentView = 'sessions';
-  } else if (view === 'kiro-only') {
-    toolFilter = toolFilter === 'kiro' ? null : 'kiro';
-    currentView = 'sessions';
-  } else if (view === 'opencode-only') {
-    toolFilter = toolFilter === 'opencode' ? null : 'opencode';
-    currentView = 'sessions';
-  } else {
-    toolFilter = null;
-    currentView = view;
-  }
-
-  // Update sidebar active state
-  document.querySelectorAll('.sidebar-item').forEach(function(el) {
-    el.classList.toggle('active', el.getAttribute('data-view') === view);
-  });
-
-  applyFilters();
-}
-
-// Wire up sidebar clicks
-document.querySelectorAll('.sidebar-item').forEach(function(el) {
-  el.addEventListener('click', function() {
-    setView(el.getAttribute('data-view'));
-  });
-});
+// → moved to calendar.js
 
 // ── Rendering: Card ────────────────────────────────────────────
 
@@ -913,7 +710,7 @@ function renderCard(s, idx) {
 
   var checkboxStyle = selectMode ? 'display:inline-block' : '';
 
-  var tagHtml = sessionTags.map(function(t) {
+  var tagHtml = sessionTags.map(function (t) {
     return '<span class="tag-pill tag-' + escHtml(t) + '" onclick="event.stopPropagation();removeTag(\'' + s.id + '\',\'' + t + '\')">' + escHtml(t) + ' &times;</span>';
   }).join('');
 
@@ -927,6 +724,10 @@ function renderCard(s, idx) {
     html += '<span class="cost-badge">' + costStr + '</span>';
   }
   html += '<button class="star-btn' + (isStarred ? ' active' : '') + '" onclick="event.stopPropagation();toggleStar(\'' + s.id + '\')" title="Star">&#9733;</button>';
+  if (cloudUnlocked) {
+    var inCloud = cloudSessionIds.has(s.id);
+    html += '<button class="star-btn' + (inCloud ? ' active' : '') + '" onclick="event.stopPropagation();cloudPushOne(\'' + s.id + '\',this)" title="' + (inCloud ? 'In cloud' : 'Push to cloud') + '" style="font-size:12px;">&#9729;</button>';
+  }
   html += '</div>';
   var aiTitle = showAITitles && sessionTitles[s.id];
   if (aiTitle) {
@@ -957,12 +758,12 @@ function renderCard(s, idx) {
   if ((s.mcp_servers && s.mcp_servers.length > 0) || (s.skills && s.skills.length > 0)) {
     html += '<div class="card-tools">';
     if (s.mcp_servers) {
-      s.mcp_servers.forEach(function(m) {
+      s.mcp_servers.forEach(function (m) {
         html += '<span class="tool-badge badge-mcp">' + escHtml(m) + '</span>';
       });
     }
     if (s.skills) {
-      s.skills.forEach(function(sk) {
+      s.skills.forEach(function (sk) {
         html += '<span class="tool-badge badge-skill">' + escHtml(sk) + '</span>';
       });
     }
@@ -1003,12 +804,12 @@ function renderListCard(s, idx) {
   var listToolLabel = s.tool === 'claude-ext' ? 'claude ext' : s.tool;
   html += '<span class="tool-badge tool-' + s.tool + '">' + escHtml(listToolLabel) + '</span>';
   if (s.mcp_servers && s.mcp_servers.length > 0) {
-    s.mcp_servers.forEach(function(m) {
+    s.mcp_servers.forEach(function (m) {
       html += '<span class="tool-badge badge-mcp">' + escHtml(m) + '</span>';
     });
   }
   if (s.skills && s.skills.length > 0) {
-    s.skills.forEach(function(sk) {
+    s.skills.forEach(function (sk) {
       html += '<span class="tool-badge badge-skill">' + escHtml(sk) + '</span>';
     });
   }
@@ -1046,7 +847,7 @@ async function toggleExpand(sessionId, project, btn) {
       area.innerHTML = '<div class="preview-empty">No messages</div>';
     } else {
       var html = '';
-      messages.forEach(function(m) {
+      messages.forEach(function (m) {
         var cls = m.role === 'user' ? 'preview-user' : 'preview-assistant';
         var label = m.role === 'user' ? 'You' : 'AI';
         html += '<div class="preview-msg ' + cls + '">';
@@ -1082,21 +883,21 @@ async function deepSearch(query) {
     var results = await resp.json();
     deepSearchCache[query] = results;
     applyDeepSearchResults(results);
-  } catch {}
+  } catch { }
 }
 
 function applyDeepSearchResults(results) {
   if (!results || results.length === 0) return;
 
   // Highlight matching session IDs in filtered list
-  var matchIds = results.map(function(r) { return r.sessionId; });
+  var matchIds = results.map(function (r) { return r.sessionId; });
 
   // Boost matching sessions to top if not already visible
   var boosted = [];
   var rest = [];
-  filteredSessions.forEach(function(s) {
+  filteredSessions.forEach(function (s) {
     if (matchIds.indexOf(s.id) >= 0) {
-      s._deepMatch = results.find(function(r) { return r.sessionId === s.id; });
+      s._deepMatch = results.find(function (r) { return r.sessionId === s.id; });
       boosted.push(s);
     } else {
       rest.push(s);
@@ -1104,11 +905,11 @@ function applyDeepSearchResults(results) {
   });
 
   // Also add sessions that weren't in filteredSessions but match
-  matchIds.forEach(function(id) {
-    if (!boosted.find(function(s) { return s.id === id; }) && !rest.find(function(s) { return s.id === id; })) {
-      var s = allSessions.find(function(x) { return x.id === id; });
+  matchIds.forEach(function (id) {
+    if (!boosted.find(function (s) { return s.id === id; }) && !rest.find(function (s) { return s.id === id; })) {
+      var s = allSessions.find(function (x) { return x.id === id; });
       if (s) {
-        s._deepMatch = results.find(function(r) { return r.sessionId === id; });
+        s._deepMatch = results.find(function (r) { return r.sessionId === id; });
         boosted.push(s);
       }
     }
@@ -1128,7 +929,7 @@ function onCardClick(id, event) {
   if (selectMode) {
     toggleSelect(id, event);
   } else {
-    var s = allSessions.find(function(x) { return x.id === id; });
+    var s = allSessions.find(function (x) { return x.id === id; });
     if (s) openDetail(s);
   }
 }
@@ -1170,6 +971,11 @@ function render() {
     return;
   }
 
+  if (currentView === 'cloud') {
+    renderCloud(content);
+    return;
+  }
+
   if (currentView === 'settings') {
     renderSettings(content);
     return;
@@ -1181,13 +987,13 @@ function render() {
   }
 
   if (currentView === 'starred') {
-    var starredSessions = sessions.filter(function(s) { return stars.indexOf(s.id) >= 0; });
+    var starredSessions = sessions.filter(function (s) { return stars.indexOf(s.id) >= 0; });
     if (starredSessions.length === 0) {
       content.innerHTML = '<div class="empty-state">No starred sessions. Click the star on any session to bookmark it.</div>';
       return;
     }
     var idx = 0;
-    content.innerHTML = starredSessions.map(function(s) { return renderCard(s, idx++); }).join('');
+    content.innerHTML = starredSessions.map(function (s) { return renderCard(s, idx++); }).join('');
     return;
   }
 
@@ -1217,7 +1023,7 @@ function render() {
   } else {
     var idx2 = 0;
     var wrapClass = layout === 'list' ? 'list-view' : 'grid-view';
-    content.innerHTML = '<div class="' + wrapClass + '">' + visible.map(function(s) { return renderFn(s, idx2++); }).join('') + '</div>';
+    content.innerHTML = '<div class="' + wrapClass + '">' + visible.map(function (s) { return renderFn(s, idx2++); }).join('') + '</div>';
   }
 
   if (hasMore) {
@@ -1233,19 +1039,19 @@ function loadMoreCards() {
 function renderGrouped(container, sessions, renderFn) {
   renderFn = renderFn || renderCard;
   var groups = {};
-  sessions.forEach(function(s) {
+  sessions.forEach(function (s) {
     var group = getSessionGroupInfo(s);
     if (!groups[group.key]) groups[group.key] = { name: group.name, sessions: [] };
     groups[group.key].sessions.push(s);
   });
 
-  var sortedKeys = Object.keys(groups).sort(function(a, b) {
+  var sortedKeys = Object.keys(groups).sort(function (a, b) {
     return groups[b].sessions[0].last_ts - groups[a].sessions[0].last_ts;
   });
 
   var globalIdx = 0;
   var html = '';
-  sortedKeys.forEach(function(key) {
+  sortedKeys.forEach(function (key) {
     var group = groups[key];
     var color = getProjectColor(key);
     html += '<div class="group">';
@@ -1257,7 +1063,7 @@ function renderGrouped(container, sessions, renderFn) {
     html += '</div>';
     var bodyClass = layout === 'list' ? 'group-body group-body-list' : 'group-body';
     html += '<div class="' + bodyClass + '">';
-    group.sessions.forEach(function(s) {
+    group.sessions.forEach(function (s) {
       html += renderFn(s, globalIdx++);
     });
     html += '</div></div>';
@@ -1268,7 +1074,7 @@ function renderGrouped(container, sessions, renderFn) {
 function renderTimeline(container, sessions) {
   // Group by date
   var byDate = {};
-  sessions.forEach(function(s) {
+  sessions.forEach(function (s) {
     var d = s.date || 'unknown';
     if (!byDate[d]) byDate[d] = [];
     byDate[d].push(s);
@@ -1283,12 +1089,12 @@ function renderTimeline(container, sessions) {
   var renderFn = layout === 'list' ? renderListCard : renderCard;
   var globalIdx = 0;
   var html = '<div class="timeline">';
-  dates.forEach(function(d) {
+  dates.forEach(function (d) {
     html += '<div class="timeline-date">';
     html += '<div class="timeline-date-label">' + escHtml(d) + ' <span class="timeline-count">' + byDate[d].length + ' sessions</span></div>';
     var wrapClass = layout === 'list' ? 'list-view' : 'grid-view';
     html += '<div class="' + wrapClass + '">';
-    byDate[d].forEach(function(s) {
+    byDate[d].forEach(function (s) {
       html += renderFn(s, globalIdx++);
     });
     html += '</div></div>';
@@ -1320,13 +1126,13 @@ function renderQACard(s, idx) {
 
 function renderProjects(container, sessions) {
   var byGit = {};
-  sessions.forEach(function(s) {
+  sessions.forEach(function (s) {
     var name = getGitProjectName(s.project, s.git_root);
     if (!byGit[name]) byGit[name] = [];
     byGit[name].push(s);
   });
 
-  var sorted = Object.entries(byGit).sort(function(a, b) {
+  var sorted = Object.entries(byGit).sort(function (a, b) {
     return b[1][0].last_ts - a[1][0].last_ts;
   });
 
@@ -1337,12 +1143,12 @@ function renderProjects(container, sessions) {
 
   var globalIdx = 0;
   var html = '<div class="git-projects">';
-  sorted.forEach(function(entry) {
+  sorted.forEach(function (entry) {
     var name = entry[0];
-    var list = entry[1].slice().sort(function(a, b) { return b.last_ts - a.last_ts; });
+    var list = entry[1].slice().sort(function (a, b) { return b.last_ts - a.last_ts; });
     var color = getProjectColor(name);
-    var totalMsgs = list.reduce(function(s, e) { return s + (e.messages || 0); }, 0);
-    var totalCost = list.reduce(function(s, e) { return s + estimateCost(e.file_size); }, 0);
+    var totalMsgs = list.reduce(function (s, e) { return s + (e.messages || 0); }, 0);
+    var totalCost = list.reduce(function (s, e) { return s + estimateCost(e.file_size); }, 0);
     var costLabel = totalCost > 0 ? ' · ~$' + totalCost.toFixed(2) : '';
 
     html += '<div class="git-project-group">';
@@ -1353,7 +1159,7 @@ function renderProjects(container, sessions) {
     html += '<span class="group-chevron">&#9660;</span>';
     html += '</div>';
     html += '<div class="qa-list">';
-    list.forEach(function(s) { html += renderQACard(s, globalIdx++); });
+    list.forEach(function (s) { html += renderQACard(s, globalIdx++); });
     html += '</div>';
     html += '</div>';
   });
@@ -1377,7 +1183,7 @@ function renderHeatmap(container) {
   // Count sessions per day + by tool
   var counts = {};
   var toolCounts = {};
-  allSessions.forEach(function(s) {
+  allSessions.forEach(function (s) {
     var d = s.date;
     if (!d) return;
     counts[d] = (counts[d] || 0) + 1;
@@ -1399,7 +1205,7 @@ function renderHeatmap(container) {
     var count = counts[iso] || 0;
     var level = count >= 8 ? 4 : count >= 4 ? 3 : count >= 2 ? 2 : count >= 1 ? 1 : 0;
     var tools = toolCounts[iso] || {};
-    var toolTip = Object.keys(tools).map(function(t) { return t + ': ' + tools[t]; }).join(', ');
+    var toolTip = Object.keys(tools).map(function (t) { return t + ': ' + tools[t]; }).join(', ');
     week.push({ date: iso, count: count, level: level, day: d.getDay(), toolTip: toolTip });
     if (week.length === 7) { weeks.push(week); week = []; }
     d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
@@ -1419,7 +1225,7 @@ function renderHeatmap(container) {
   var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var monthLabels = [];
   var lastMonth = -1;
-  weeks.forEach(function(w, wi) {
+  weeks.forEach(function (w, wi) {
     var m = parseInt(w[0].date.slice(5, 7)) - 1;
     if (m !== lastMonth) {
       monthLabels.push({ x: labelW + wi * step, label: monthNames[m] });
@@ -1433,7 +1239,7 @@ function renderHeatmap(container) {
   var maxDay = '';
   var maxCount = 0;
   var activeDays = 0;
-  Object.keys(counts).forEach(function(d) {
+  Object.keys(counts).forEach(function (d) {
     if (d >= yearStart) {
       totalThisYear += counts[d];
       activeDays++;
@@ -1468,19 +1274,19 @@ function renderHeatmap(container) {
   var svg = '<svg width="' + svgW + '" height="' + svgH + '" xmlns="http://www.w3.org/2000/svg">';
 
   // Month labels
-  monthLabels.forEach(function(ml) {
+  monthLabels.forEach(function (ml) {
     svg += '<text x="' + ml.x + '" y="12" fill="#8b949e" font-size="11" font-family="-apple-system,BlinkMacSystemFont,sans-serif">' + ml.label + '</text>';
   });
 
   // Day labels
-  var dayLabels = [{row: 1, label: 'Mon'}, {row: 3, label: 'Wed'}, {row: 5, label: 'Fri'}];
-  dayLabels.forEach(function(dl) {
+  var dayLabels = [{ row: 1, label: 'Mon' }, { row: 3, label: 'Wed' }, { row: 5, label: 'Fri' }];
+  dayLabels.forEach(function (dl) {
     svg += '<text x="0" y="' + (headerH + dl.row * step + cell - 1) + '" fill="#8b949e" font-size="10" font-family="-apple-system,BlinkMacSystemFont,sans-serif">' + dl.label + '</text>';
   });
 
   // Cells
-  weeks.forEach(function(w, wi) {
-    w.forEach(function(day, di) {
+  weeks.forEach(function (w, wi) {
+    w.forEach(function (day, di) {
       var x = labelW + wi * step;
       var y = headerH + di * step;
       var fill = colors[day.level];
@@ -1505,7 +1311,7 @@ function renderHeatmap(container) {
   html += '<a href="#" onclick="event.preventDefault()" class="gh-link">Learn how we count sessions</a>';
   html += '<div class="gh-legend">';
   html += '<span>Less</span>';
-  colors.forEach(function(c) {
+  colors.forEach(function (c) {
     html += '<span class="gh-legend-cell" style="background:' + c + '"></span>';
   });
   html += '<span>More</span>';
@@ -1541,10 +1347,10 @@ function renderHeatmap(container) {
 
   // Per-tool breakdown
   var toolTotals = {};
-  allSessions.forEach(function(s) { if (s.date >= yearStart) { toolTotals[s.tool] = (toolTotals[s.tool] || 0) + 1; } });
+  allSessions.forEach(function (s) { if (s.date >= yearStart) { toolTotals[s.tool] = (toolTotals[s.tool] || 0) + 1; } });
   var toolColors = { claude: '#60a5fa', codex: '#22d3ee', opencode: '#c084fc', kiro: '#fb923c' };
   html += '<div class="gh-tools">';
-  Object.keys(toolTotals).sort(function(a,b) { return toolTotals[b] - toolTotals[a]; }).forEach(function(tool) {
+  Object.keys(toolTotals).sort(function (a, b) { return toolTotals[b] - toolTotals[a]; }).forEach(function (tool) {
     var pct = (toolTotals[tool] / Math.max(totalThisYear, 1) * 100).toFixed(0);
     var color = toolColors[tool] || '#6b7280';
     html += '<div class="gh-tool-row">';
@@ -1600,7 +1406,7 @@ async function openDetail(s) {
   infoHtml += '<div class="detail-row" id="detail-real-cost" style="display:none"><span class="detail-label">Real cost</span><span></span></div>';
   // Tags
   infoHtml += '<div class="detail-row"><span class="detail-label">Tags</span><span class="card-tags">';
-  sessionTags.forEach(function(t) {
+  sessionTags.forEach(function (t) {
     infoHtml += '<span class="tag-pill tag-' + escHtml(t) + '" onclick="removeTag(\'' + s.id + '\',\'' + t + '\')">' + escHtml(t) + ' &times;</span>';
   });
   infoHtml += '<button class="tag-add-btn" onclick="showTagDropdown(event, \'' + s.id + '\')">+</button>';
@@ -1608,7 +1414,7 @@ async function openDetail(s) {
   // MCP servers row
   if (s.mcp_servers && s.mcp_servers.length > 0) {
     infoHtml += '<div class="detail-row"><span class="detail-label">MCP</span><span style="display:flex;gap:4px;flex-wrap:wrap">';
-    s.mcp_servers.forEach(function(m) {
+    s.mcp_servers.forEach(function (m) {
       infoHtml += '<span class="tool-badge badge-mcp">' + escHtml(m) + '</span>';
     });
     infoHtml += '</span></div>';
@@ -1616,7 +1422,7 @@ async function openDetail(s) {
   // Skills row
   if (s.skills && s.skills.length > 0) {
     infoHtml += '<div class="detail-row"><span class="detail-label">Skills</span><span style="display:flex;gap:4px;flex-wrap:wrap">';
-    s.skills.forEach(function(sk) {
+    s.skills.forEach(function (sk) {
       infoHtml += '<span class="tool-badge badge-skill">' + escHtml(sk) + '</span>';
     });
     infoHtml += '</span></div>';
@@ -1661,7 +1467,7 @@ async function openDetail(s) {
       var msgContainer = body.querySelector('.detail-messages');
       if (data.messages && data.messages.length > 0) {
         var msgsHtml = '<h3>Conversation</h3>';
-        data.messages.forEach(function(m) {
+        data.messages.forEach(function (m) {
           var roleClass = m.role === 'user' ? 'msg-user' : 'msg-assistant';
           var roleLabel = m.role === 'user' ? 'You' : 'Assistant';
           var hasTools = m.tools && m.tools.length > 0;
@@ -1672,7 +1478,7 @@ async function openDetail(s) {
           msgsHtml += '</div>';
           if (hasTools) {
             msgsHtml += '<div class="msg-tools">';
-            m.tools.forEach(function(t) {
+            m.tools.forEach(function (t) {
               if (t.type === 'mcp') {
                 msgsHtml += '<span class="tool-badge badge-mcp">' + escHtml(t.tool) + '</span>';
               } else if (t.type === 'skill') {
@@ -1695,14 +1501,14 @@ async function openDetail(s) {
   }
 
   // Load real cost
-  loadRealCost(s.id, s.project || '').then(function(costData) {
+  loadRealCost(s.id, s.project || '').then(function (costData) {
     if (!costData || !costData.cost) return;
     var row = document.getElementById('detail-real-cost');
     if (row) {
       row.style.display = '';
       var cacheStr = '';
       if ((costData.cacheReadTokens || 0) + (costData.cacheCreateTokens || 0) > 0)
-        cacheStr = ' / ' + formatTokens((costData.cacheReadTokens||0) + (costData.cacheCreateTokens||0)) + ' cache';
+        cacheStr = ' / ' + formatTokens((costData.cacheReadTokens || 0) + (costData.cacheCreateTokens || 0)) + ' cache';
       row.querySelector('span:last-child').innerHTML =
         '<span class="cost-badge" style="background:rgba(74,222,128,0.2);color:var(--accent-green)">$' + costData.cost.toFixed(2) + '</span>' +
         ' <span style="font-size:11px;color:var(--text-muted)">' +
@@ -1717,8 +1523,8 @@ async function openDetail(s) {
   // Load git info
   if (s.project) {
     fetch('/api/git-info?project=' + encodeURIComponent(s.project))
-      .then(function(r) { return r.json(); })
-      .then(function(git) {
+      .then(function (r) { return r.json(); })
+      .then(function (git) {
         var el = document.getElementById('detail-git-info');
         if (!el || git.error) return;
         var html = '';
@@ -1737,7 +1543,7 @@ async function openDetail(s) {
           html += '<div class="detail-row"><span class="detail-label">Remote</span><span class="mono" style="font-size:11px">' + escHtml(displayUrl) + '</span></div>';
         }
         el.innerHTML = html;
-      }).catch(function() {});
+      }).catch(function () { });
   }
 
   // Load git commits
@@ -1746,7 +1552,7 @@ async function openDetail(s) {
     var commitsContainer = body.querySelector('.detail-commits');
     if (commits && commits.length > 0) {
       var cHtml = '<h3>Related Commits</h3><div class="commits-list">';
-      commits.forEach(function(c) {
+      commits.forEach(function (c) {
         cHtml += '<div class="commit-item">';
         cHtml += '<span class="commit-hash">' + escHtml(c.hash) + '</span>';
         cHtml += '<span class="commit-msg">' + escHtml(c.message) + '</span>';
@@ -1772,7 +1578,7 @@ function closeDetail() {
   if (!handle || !panel) return;
 
   var startX, startW;
-  handle.addEventListener('mousedown', function(e) {
+  handle.addEventListener('mousedown', function (e) {
     e.preventDefault();
     startX = e.clientX;
     startW = panel.offsetWidth;
@@ -1825,18 +1631,18 @@ function launchSession(sessionId, tool, project, flags) {
       project: project,
       terminal: terminal
     })
-  }).then(function(resp) {
+  }).then(function (resp) {
     return resp.json();
-  }).then(function(data) {
+  }).then(function (data) {
     if (data.ok) showToast('Launched in terminal');
     else showToast('Launch failed: ' + (data.error || 'unknown'));
-  }).catch(function() {
+  }).catch(function () {
     showToast('Launch failed');
   });
 }
 
 function copyResume(sessionId, tool) {
-  var s = allSessions.find(function(x) { return x.id === sessionId; });
+  var s = allSessions.find(function (x) { return x.id === sessionId; });
   var cmd;
   if (tool === 'codex') {
     cmd = 'codex resume ' + sessionId;
@@ -1845,7 +1651,12 @@ function copyResume(sessionId, tool) {
   } else {
     cmd = 'claude --resume ' + sessionId;
   }
-  copyText(cmd, 'Copied: ' + cmd);
+  navigator.clipboard.writeText(cmd).then(function () {
+    showToast('Copied: ' + cmd);
+  }).catch(function () {
+    // Fallback
+    prompt('Copy this command:', cmd);
+  });
 }
 
 function exportMd(sessionId, project) {
@@ -1864,7 +1675,7 @@ function showDeleteConfirm(sessionId, project) {
   var btn = document.getElementById('confirmAction');
   btn.textContent = 'Delete';
   btn.className = 'btn-delete';
-  btn.onclick = function() { confirmDelete(); };
+  btn.onclick = function () { confirmDelete(); };
 }
 
 function closeConfirm() {
@@ -1884,12 +1695,12 @@ async function confirmDelete() {
     var data = await resp.json();
     if (data.ok) {
       showToast('Session deleted');
-      allSessions = allSessions.filter(function(s) { return s.id !== pendingDelete.id; });
+      allSessions = allSessions.filter(function (s) { return s.id !== pendingDelete.id; });
       // Clear search if no more results
       if (searchQuery) {
-        var remaining = allSessions.filter(function(s) {
+        var remaining = allSessions.filter(function (s) {
           return (s.project || '').toLowerCase().indexOf(searchQuery.toLowerCase()) >= 0 ||
-                 (s.first_message || '').toLowerCase().indexOf(searchQuery.toLowerCase()) >= 0;
+            (s.first_message || '').toLowerCase().indexOf(searchQuery.toLowerCase()) >= 0;
         });
         if (remaining.length === 0) {
           searchQuery = '';
@@ -1952,8 +1763,8 @@ function clearSelection() {
 async function bulkDelete() {
   if (!confirm('Delete ' + selectedIds.size + ' sessions? This cannot be undone.')) return;
   var sessions = [];
-  selectedIds.forEach(function(id) {
-    var s = allSessions.find(function(x) { return x.id === id; });
+  selectedIds.forEach(function (id) {
+    var s = allSessions.find(function (x) { return x.id === id; });
     sessions.push({ id: id, project: s ? s.project : '' });
   });
   try {
@@ -1965,7 +1776,7 @@ async function bulkDelete() {
     var data = await resp.json();
     if (data.ok) {
       showToast('Deleted ' + sessions.length + ' sessions');
-      allSessions = allSessions.filter(function(s) { return !selectedIds.has(s.id); });
+      allSessions = allSessions.filter(function (s) { return !selectedIds.has(s.id); });
       clearSelection();
       applyFilters();
     }
@@ -1980,7 +1791,7 @@ function openProject(name) {
   currentView = 'sessions';
   searchQuery = name;
   document.querySelector('.search-box').value = name;
-  document.querySelectorAll('.sidebar-item').forEach(function(el) {
+  document.querySelectorAll('.sidebar-item').forEach(function (el) {
     el.classList.toggle('active', el.getAttribute('data-view') === 'sessions');
   });
   applyFilters();
@@ -2019,7 +1830,7 @@ function moveFocus(delta) {
   var cards = document.querySelectorAll('.card');
   if (cards.length === 0) return;
   focusedIndex = Math.max(0, Math.min(cards.length - 1, focusedIndex + delta));
-  cards.forEach(function(c, i) {
+  cards.forEach(function (c, i) {
     c.classList.toggle('focused', i === focusedIndex);
   });
   if (cards[focusedIndex]) {
@@ -2032,7 +1843,7 @@ function openFocusedCard() {
   if (focusedIndex < 0 || focusedIndex >= cards.length) return;
   var id = cards[focusedIndex].getAttribute('data-id');
   if (!id) return;
-  var s = allSessions.find(function(x) { return x.id === id; });
+  var s = allSessions.find(function (x) { return x.id === id; });
   if (s) {
     if (selectMode) {
       toggleSelect(id);
@@ -2054,11 +1865,11 @@ function deleteFocused() {
   if (focusedIndex < 0 || focusedIndex >= cards.length) return;
   var id = cards[focusedIndex].getAttribute('data-id');
   if (!id) return;
-  var s = allSessions.find(function(x) { return x.id === id; });
+  var s = allSessions.find(function (x) { return x.id === id; });
   if (s) showDeleteConfirm(s.id, s.project || '');
 }
 
-document.addEventListener('keydown', function(e) {
+document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     if (pendingDelete) {
       closeConfirm();
@@ -2162,7 +1973,7 @@ function renderDoneCard(s) {
   if (s.last_time) html += '<div class="running-stat"><span class="running-stat-val">' + s.last_time.slice(11) + '</span><span class="running-stat-label">ended</span></div>';
   html += '</div>';
   html += '<div class="running-actions">';
-  html += '<button class="launch-btn btn-secondary" onclick="openDetail(' + JSON.stringify({id: s.id, project: s.project || '', tool: s.tool || ''}) + ')">Details</button>';
+  html += '<button class="launch-btn btn-secondary" onclick="openDetail(' + JSON.stringify({ id: s.id, project: s.project || '', tool: s.tool || '' }) + ')">Details</button>';
   html += '</div>';
   html += '</div>';
   return html;
@@ -2170,10 +1981,10 @@ function renderDoneCard(s) {
 
 function renderRunning(container, sessions) {
   var allActiveIds = Object.keys(activeSessions);
-  var running = allActiveIds.filter(function(sid) { return activeSessions[sid].status !== 'waiting'; });
-  var waiting = allActiveIds.filter(function(sid) { return activeSessions[sid].status === 'waiting'; });
+  var running = allActiveIds.filter(function (sid) { return activeSessions[sid].status !== 'waiting'; });
+  var waiting = allActiveIds.filter(function (sid) { return activeSessions[sid].status === 'waiting'; });
   var cutoff = Date.now() - 4 * 3600 * 1000;
-  var done = sessions.filter(function(s) {
+  var done = sessions.filter(function (s) {
     return !activeSessions[s.id] && s.last_ts >= cutoff;
   }).slice(0, 8);
 
@@ -2192,9 +2003,9 @@ function renderRunning(container, sessions) {
   if (running.length === 0) {
     html += '<div class="kanban-empty">No active sessions</div>';
   } else {
-    running.forEach(function(sid) {
+    running.forEach(function (sid) {
       var a = activeSessions[sid];
-      var s = allSessions.find(function(x) { return x.id === sid; });
+      var s = allSessions.find(function (x) { return x.id === sid; });
       html += renderRunningCard(a, s);
     });
   }
@@ -2206,9 +2017,9 @@ function renderRunning(container, sessions) {
   if (waiting.length === 0) {
     html += '<div class="kanban-empty">No sessions waiting</div>';
   } else {
-    waiting.forEach(function(sid) {
+    waiting.forEach(function (sid) {
       var a = activeSessions[sid];
-      var s = allSessions.find(function(x) { return x.id === sid; });
+      var s = allSessions.find(function (x) { return x.id === sid; });
       html += renderRunningCard(a, s);
     });
   }
@@ -2220,7 +2031,7 @@ function renderRunning(container, sessions) {
   if (done.length === 0) {
     html += '<div class="kanban-empty">No recent sessions</div>';
   } else {
-    done.forEach(function(s) { html += renderDoneCard(s); });
+    done.forEach(function (s) { html += renderDoneCard(s); });
   }
   html += '</div>';
 
@@ -2229,347 +2040,9 @@ function renderRunning(container, sessions) {
   container.innerHTML = html;
 }
 
-// ── Session Replay ────────────────────────────────────────────
+// → moved to detail.js (Session Replay)
 
-async function openReplay(sessionId, project) {
-  var content = document.getElementById('content');
-  content.innerHTML = '<div class="loading">Loading replay...</div>';
-
-  try {
-    var resp = await fetch('/api/replay/' + sessionId + '?project=' + encodeURIComponent(project));
-    var data = await resp.json();
-
-    if (!data.messages || data.messages.length === 0) {
-      content.innerHTML = '<div class="empty-state">No messages to replay.</div>';
-      return;
-    }
-
-    var msgs = data.messages;
-    var html = '<div class="replay-container">';
-    html += '<div class="replay-header">';
-    html += '<button class="launch-btn btn-secondary" onclick="setView(\'sessions\')">Back</button>';
-    html += '<span class="replay-title">Session Replay — ' + sessionId.slice(0, 12) + '</span>';
-    html += '<span class="replay-duration">' + formatDuration(data.duration) + '</span>';
-    html += '</div>';
-
-    // Timeline slider
-    html += '<div class="replay-controls">';
-    html += '<button class="replay-play-btn" id="replayPlayBtn" onclick="toggleReplayPlay()">&#9654;</button>';
-    html += '<input type="range" class="replay-slider" id="replaySlider" min="0" max="' + (msgs.length - 1) + '" value="0" oninput="seekReplay(this.value)">';
-    html += '<span class="replay-counter" id="replayCounter">1 / ' + msgs.length + '</span>';
-    html += '</div>';
-
-    // Messages area
-    html += '<div class="replay-messages" id="replayMessages"></div>';
-    html += '</div>';
-
-    content.innerHTML = html;
-
-    // Store messages for replay
-    window._replayMsgs = msgs;
-    window._replayPos = 0;
-    window._replayPlaying = false;
-    window._replayTimer = null;
-    seekReplay(0);
-  } catch (e) {
-    content.innerHTML = '<div class="empty-state">Failed to load replay.</div>';
-  }
-}
-
-function seekReplay(pos) {
-  pos = parseInt(pos);
-  var msgs = window._replayMsgs;
-  if (!msgs) return;
-  window._replayPos = pos;
-
-  var container = document.getElementById('replayMessages');
-  var slider = document.getElementById('replaySlider');
-  var counter = document.getElementById('replayCounter');
-  if (!container) return;
-
-  var html = '';
-  for (var i = 0; i <= pos && i < msgs.length; i++) {
-    var m = msgs[i];
-    var cls = m.role === 'user' ? 'preview-user' : 'preview-assistant';
-    var label = m.role === 'user' ? 'You' : 'AI';
-    var time = m.timestamp ? new Date(m.timestamp).toLocaleTimeString() : '';
-    var isLatest = i === pos;
-    html += '<div class="replay-msg ' + cls + (isLatest ? ' replay-latest' : '') + '">';
-    html += '<div class="replay-msg-header"><span class="preview-role">' + label + '</span><span class="replay-time">' + time + '</span></div>';
-    html += '<div class="replay-msg-content">' + escHtml(m.content) + '</div>';
-    html += '</div>';
-  }
-  container.innerHTML = html;
-  container.scrollTop = container.scrollHeight;
-
-  if (slider) slider.value = pos;
-  if (counter) counter.textContent = (pos + 1) + ' / ' + msgs.length;
-}
-
-function toggleReplayPlay() {
-  var btn = document.getElementById('replayPlayBtn');
-  if (window._replayPlaying) {
-    window._replayPlaying = false;
-    clearInterval(window._replayTimer);
-    if (btn) btn.innerHTML = '&#9654;';
-  } else {
-    window._replayPlaying = true;
-    if (btn) btn.innerHTML = '&#9646;&#9646;';
-    window._replayTimer = setInterval(function() {
-      var next = window._replayPos + 1;
-      if (next >= window._replayMsgs.length) {
-        toggleReplayPlay();
-        return;
-      }
-      seekReplay(next);
-    }, 1500);
-  }
-}
-
-function formatDuration(ms) {
-  if (!ms) return '';
-  var s = Math.floor(ms / 1000);
-  var m = Math.floor(s / 60);
-  var h = Math.floor(m / 60);
-  if (h > 0) return h + 'h ' + (m % 60) + 'm';
-  if (m > 0) return m + 'm ' + (s % 60) + 's';
-  return s + 's';
-}
-
-// ── Cost Analytics ────────────────────────────────────────────
-
-async function renderAnalytics(container) {
-  container.innerHTML = '<div class="loading">Loading analytics...</div>';
-
-  try {
-    var url = '/api/analytics/cost';
-    var params = [];
-    if (dateFrom) params.push('from=' + dateFrom);
-    if (dateTo) params.push('to=' + dateTo);
-    if (params.length) url += '?' + params.join('&');
-    var resp = await fetch(url);
-    var data = await resp.json();
-
-    var html = '<div class="analytics-container">';
-    html += '<h2 class="heatmap-title">Cost Analytics</h2>';
-
-    // ── Summary cards ──────────────────────────────────────────
-    html += '<div class="analytics-summary">';
-    html += '<div class="analytics-card"><span class="analytics-val">$' + data.totalCost.toFixed(2) + '</span><span class="analytics-label">Total cost (API-equivalent)</span></div>';
-    html += '<div class="analytics-card"><span class="analytics-val">' + formatTokens(data.totalTokens) + '</span><span class="analytics-label">Total tokens</span></div>';
-    html += '<div class="analytics-card"><span class="analytics-val">$' + (data.dailyRate || 0).toFixed(2) + '</span><span class="analytics-label">Avg per day (' + (data.days || 1) + ' days)</span></div>';
-    html += '<div class="analytics-card"><span class="analytics-val">' + data.totalSessions + '</span><span class="analytics-label">Sessions</span></div>';
-    html += '</div>';
-
-    // ── Burn rate ──────────────────────────────────────────────
-    var todayCost = data.todayCost || 0;
-    var last1hCost = data.last1hCost || 0;
-    var dailyRate = data.dailyRate || 0;
-    var hoursElapsed = data.hoursElapsedToday || 1;
-    // Project today's pace to a full day for comparison
-    var projectedDaily = todayCost / (hoursElapsed / 24);
-    var paceRatio = dailyRate > 0 ? projectedDaily / dailyRate : 0;
-    var burnClass = paceRatio >= 2 ? 'burn-high' : paceRatio >= 1.3 ? 'burn-medium' : 'burn-low';
-    var paceLabel = paceRatio >= 2 ? '🔥 ' + Math.round(paceRatio) + 'x avg' : paceRatio >= 1.3 ? '↑ ' + paceRatio.toFixed(1) + 'x avg' : dailyRate > 0 ? '✓ normal' : '';
-    html += '<div class="burn-rate-bar">';
-    html += '<div class="burn-rate-title">Burn Rate</div>';
-    html += '<div class="burn-rate-stats">';
-    html += '<div class="burn-stat"><span class="burn-val ' + burnClass + '">$' + todayCost.toFixed(3) + '</span><span class="burn-label">today</span>' + (paceLabel ? '<span class="burn-pace ' + burnClass + '">' + paceLabel + '</span>' : '') + '</div>';
-    html += '<div class="burn-stat"><span class="burn-val">$' + last1hCost.toFixed(3) + '</span><span class="burn-label">last hour</span></div>';
-    if (dailyRate > 0) {
-      html += '<div class="burn-stat"><span class="burn-val">$' + projectedDaily.toFixed(2) + '</span><span class="burn-label">projected today</span></div>';
-    }
-    html += '</div>';
-    html += '</div>';
-
-    // ── Data coverage note ────────────────────────────────────
-    if (data.byAgent || data.agentNoCostData) {
-      var coverageparts = [];
-      var byAgent = data.byAgent || {};
-      var noCost = data.agentNoCostData || {};
-      if (byAgent['claude'] && byAgent['claude'].sessions > 0)
-        coverageparts.push('<span class="coverage-ok">Claude Code \u2713</span>');
-      if (byAgent['claude-ext'] && byAgent['claude-ext'].sessions > 0)
-        coverageparts.push('<span class="coverage-ok">Claude Extension \u2713</span>');
-      if (byAgent['codex'] && byAgent['codex'].sessions > 0)
-        coverageparts.push('<span class="coverage-est">Codex ~est.</span>');
-      if (byAgent['opencode'] && byAgent['opencode'].sessions > 0)
-        coverageparts.push(byAgent['opencode'].estimated
-          ? '<span class="coverage-est">OpenCode ~est.</span>'
-          : '<span class="coverage-ok">OpenCode \u2713</span>');
-      ['cursor', 'kiro'].forEach(function(a) {
-        if (noCost[a] > 0)
-          coverageparts.push('<span class="coverage-none">' + a + ' \u2717 (no token data)</span>');
-      });
-      if (noCost['opencode'] > 0 && !(byAgent['opencode'] && byAgent['opencode'].sessions > 0))
-        coverageparts.push('<span class="coverage-none">opencode \u2717 (no token data)</span>');
-      if (coverageparts.length > 0) {
-        html += '<div class="analytics-coverage">Cost data: ' + coverageparts.join(' \u00b7 ') + '</div>';
-      }
-    }
-
-    // ── Token breakdown ────────────────────────────────────────
-    if (data.totalInputTokens !== undefined) {
-      var totalTok = data.totalInputTokens + data.totalOutputTokens + data.totalCacheReadTokens + data.totalCacheCreateTokens;
-      var pctOf = function(n) { return totalTok > 0 ? Math.round(n / totalTok * 100) : 0; };
-      html += '<div class="chart-section analytics-token-breakdown">';
-      html += '<h3>Token Breakdown</h3>';
-      html += '<div class="token-breakdown-grid">';
-      html += '<div class="token-type-card"><span class="token-type-val">' + formatTokens(data.totalInputTokens) + '</span><span class="token-type-label">Input</span><span class="token-type-pct">' + pctOf(data.totalInputTokens) + '%</span></div>';
-      html += '<div class="token-type-card"><span class="token-type-val">' + formatTokens(data.totalOutputTokens) + '</span><span class="token-type-label">Output</span><span class="token-type-pct">' + pctOf(data.totalOutputTokens) + '%</span></div>';
-      html += '<div class="token-type-card token-cache-read"><span class="token-type-val">' + formatTokens(data.totalCacheReadTokens) + '</span><span class="token-type-label">Cache read</span><span class="token-type-pct">' + pctOf(data.totalCacheReadTokens) + '%</span></div>';
-      html += '<div class="token-type-card token-cache-create"><span class="token-type-val">' + formatTokens(data.totalCacheCreateTokens) + '</span><span class="token-type-label">Cache write</span><span class="token-type-pct">' + pctOf(data.totalCacheCreateTokens) + '%</span></div>';
-      if (data.avgContextPct > 0) {
-        html += '<div class="token-type-card token-context"><span class="token-type-val">' + data.avgContextPct + '%</span><span class="token-type-label">Avg context used</span><span class="token-type-pct">of 200K</span></div>';
-      }
-      html += '</div>';
-      html += '</div>';
-    }
-
-    // ── Subscription vs API ────────────────────────────────────
-    var sub = getSubscriptionConfig();
-    var subEntries = (sub && sub.entries) || [];
-    var totalPaid = subTotalPaid(subEntries);
-    html += '<div class="chart-section subscription-section">';
-    html += '<h3>Subscription vs API</h3>';
-
-    if (totalPaid > 0) {
-      var savings = data.totalCost - totalPaid;
-      var multiplier = data.totalCost / totalPaid;
-      var savingsPositive = savings > 0;
-      var breakdown = subEntries.map(function(e) {
-        return escHtml(e.plan || 'Sub') + ' $' + parseFloat(e.paid).toFixed(0);
-      }).join(' + ');
-      html += '<div class="sub-comparison">';
-      html += '<div class="sub-card sub-paid"><span class="sub-val">$' + totalPaid.toFixed(2) + '</span><span class="sub-label">Paid (' + breakdown + ')</span></div>';
-      html += '<div class="sub-card sub-api"><span class="sub-val">$' + data.totalCost.toFixed(2) + '</span><span class="sub-label">Would cost at API rates</span></div>';
-      html += '<div class="sub-card ' + (savingsPositive ? 'sub-savings' : 'sub-loss') + '"><span class="sub-val">' + (savingsPositive ? '+' : '') + '$' + Math.abs(savings).toFixed(2) + '</span><span class="sub-label">' + (savingsPositive ? 'Saved (' + multiplier.toFixed(1) + '\u00d7 ROI)' : 'API would be cheaper') + '</span></div>';
-      html += '</div>';
-      var barPct = Math.min(100, data.totalCost > 0 ? (totalPaid / data.totalCost * 100) : 100);
-      html += '<div class="sub-bar-track" title="$' + totalPaid.toFixed(2) + ' paid of $' + data.totalCost.toFixed(2) + ' API equivalent">';
-      html += '<div class="sub-bar-fill" style="width:' + barPct + '%"></div>';
-      html += '</div>';
-    } else {
-      html += '<p class="sub-hint">Add your subscription periods below to see how much you\'re saving vs API rates.</p>';
-    }
-
-    // Period list
-    html += '<div class="sub-entries">';
-    if (subEntries.length > 0) {
-      subEntries.forEach(function(e, i) {
-        var serviceLabel = e.service && SERVICE_PLANS[e.service] ? SERVICE_PLANS[e.service].label : e.service || '';
-        html += '<div class="sub-entry-row">';
-        if (serviceLabel) html += '<span class="sub-entry-service">' + escHtml(serviceLabel) + '</span>';
-        html += '<span class="sub-entry-plan">' + escHtml(e.plan || '\u2014') + '</span>';
-        html += '<span class="sub-entry-paid">$' + parseFloat(e.paid || 0).toFixed(2) + '/mo</span>';
-        html += '<span class="sub-entry-from">' + (e.from ? 'from ' + e.from : 'no date') + '</span>';
-        html += '<button class="sub-entry-remove" onclick="removeSubEntry(' + i + ')" title="Remove">\u00d7</button>';
-        html += '</div>';
-      });
-    }
-    html += '</div>';
-
-    // Add form
-    var serviceOptions = '<option value="">— service —</option>' +
-      Object.keys(SERVICE_PLANS).map(function(k) {
-        return '<option value="' + k + '">' + SERVICE_PLANS[k].label + '</option>';
-      }).join('');
-    html += '<div class="sub-add-form">';
-    html += '<select id="sub-new-service" onchange="onSubServiceChange()">' + serviceOptions + '</select>';
-    html += '<select id="sub-new-plan" onchange="onSubPlanChange()"><option value="">— plan —</option></select>';
-    html += '<input id="sub-new-paid" type="number" min="0" step="0.01" placeholder="$/mo" />';
-    html += '<input id="sub-new-from" type="date" title="Start date of this billing period" />';
-    html += '<button onclick="addSubEntry()">+ Add period</button>';
-    html += '</div>';
-    html += '</div>';
-
-    // ── Daily cost chart ───────────────────────────────────────
-    var dayKeys = Object.keys(data.byDay).sort();
-    var last30 = dayKeys.slice(-30);
-    if (last30.length > 0) {
-      var maxCost = Math.max.apply(null, last30.map(function(d) { return data.byDay[d].cost; }));
-      html += '<div class="chart-section"><h3>Daily Cost (last 30 days)</h3>';
-      html += '<div class="bar-chart">';
-      last30.forEach(function(d) {
-        var c = data.byDay[d];
-        var pct = maxCost > 0 ? (c.cost / maxCost * 100) : 0;
-        var label = d.slice(5); // MM-DD
-        html += '<div class="bar-col" title="' + d + ': $' + c.cost.toFixed(2) + ' (' + c.sessions + ' sessions)">';
-        html += '<div class="bar-fill" style="height:' + pct + '%"></div>';
-        html += '<div class="bar-label">' + label + '</div>';
-        html += '</div>';
-      });
-      html += '</div></div>';
-    }
-
-    // ── Cost by project ────────────────────────────────────────
-    var projects = Object.entries(data.byProject).sort(function(a, b) { return b[1].cost - a[1].cost; });
-    var topProjects = projects.slice(0, 10);
-    if (topProjects.length > 0) {
-      var maxProjCost = topProjects[0][1].cost;
-      html += '<div class="chart-section"><h3>Cost by Project</h3>';
-      html += '<div class="hbar-chart">';
-      topProjects.forEach(function(entry) {
-        var name = entry[0];
-        var info = entry[1];
-        var pct = maxProjCost > 0 ? (info.cost / maxProjCost * 100) : 0;
-        html += '<div class="hbar-row">';
-        html += '<span class="hbar-name">' + escHtml(name) + '</span>';
-        html += '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%"></div></div>';
-        html += '<span class="hbar-val">$' + info.cost.toFixed(2) + '</span>';
-        html += '</div>';
-      });
-      html += '</div></div>';
-    }
-
-    // ── Top expensive sessions ─────────────────────────────────
-    if (data.topSessions && data.topSessions.length > 0) {
-      html += '<div class="chart-section"><h3>Most Expensive Sessions</h3>';
-      html += '<div class="top-sessions">';
-      data.topSessions.forEach(function(s) {
-        html += '<div class="top-session-row" onclick="onCardClick(\'' + s.id + '\', event)">';
-        html += '<span class="top-session-cost">$' + s.cost.toFixed(2) + '</span>';
-        html += '<span class="top-session-project">' + escHtml(s.project) + '</span>';
-        html += '<span class="top-session-date">' + (s.date || '') + '</span>';
-        html += '<span class="top-session-id">' + s.id.slice(0, 8) + '</span>';
-        html += '</div>';
-      });
-      html += '</div></div>';
-    }
-
-    // ── Cost by agent ──────────────────────────────────────────
-    var agentEntries = Object.entries(data.byAgent || {}).filter(function(e) { return e[1].sessions > 0; });
-    if (agentEntries.length > 1) {
-      agentEntries.sort(function(a, b) { return b[1].cost - a[1].cost; });
-      html += '<div class="chart-section"><h3>Cost by Agent</h3>';
-      html += '<div class="hbar-chart">';
-      var maxAgentCost = agentEntries[0][1].cost || 1;
-      agentEntries.forEach(function(entry) {
-        var name = entry[0]; var info = entry[1];
-        var pct = maxAgentCost > 0 ? (info.cost / maxAgentCost * 100) : 0;
-        var label = { 'claude': 'Claude Code', 'claude-ext': 'Claude Ext', 'codex': 'Codex', 'opencode': 'OpenCode', 'cursor': 'Cursor', 'kiro': 'Kiro' }[name] || name;
-        var estMark = info.estimated ? ' <span style="font-size:10px;opacity:0.6">~est.</span>' : '';
-        html += '<div class="hbar-row">';
-        html += '<span class="hbar-name">' + label + estMark + '</span>';
-        html += '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%"></div></div>';
-        html += '<span class="hbar-val">$' + info.cost.toFixed(2) + ' <span style="font-size:10px;opacity:0.6">(' + info.sessions + ' sess.)</span></span>';
-        html += '</div>';
-      });
-      html += '</div></div>';
-    }
-
-    html += '</div>';
-    container.innerHTML = html;
-  } catch (e) {
-    container.innerHTML = '<div class="empty-state">Failed to load analytics.</div>';
-  }
-}
-
-function formatTokens(n) {
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
-  return String(n);
-}
+// → moved to analytics.js
 
 // ── Focus active session (switch to terminal) ─────────────────
 
@@ -2581,7 +2054,7 @@ function focusSession(sessionId) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pid: a.pid })
-  }).then(function(r) { return r.json(); }).then(function(data) {
+  }).then(function (r) { return r.json(); }).then(function (data) {
     if (data.ok) {
       var hint = data.terminal || 'terminal';
       var cwd = a.cwd ? a.cwd.split('/').pop() : '';
@@ -2589,7 +2062,7 @@ function focusSession(sessionId) {
     } else {
       showToast('Could not focus — try clicking the terminal manually');
     }
-  }).catch(function() {
+  }).catch(function () {
     showToast('Focus failed');
   });
 }
@@ -2609,7 +2082,7 @@ function renderSettings(container) {
   html += '<div class="settings-group">';
   html += '<label class="settings-label">Theme</label>';
   html += '<div class="settings-theme-btns">';
-  ['dark', 'light', 'system'].forEach(function(t) {
+  ['dark', 'light', 'system'].forEach(function (t) {
     var active = savedTheme === t ? ' active' : '';
     html += '<button class="theme-btn' + active + '" onclick="saveThemePref(\'' + t + '\');renderSettings(document.getElementById(\'content\'))">' + t.charAt(0).toUpperCase() + t.slice(1) + '</button>';
   });
@@ -2621,7 +2094,7 @@ function renderSettings(container) {
   html += '<label class="settings-label">Terminal</label>';
   html += '<select class="settings-select" onchange="saveTerminalPref(this.value)">';
   if (Array.isArray(availableTerminals)) {
-    availableTerminals.forEach(function(t) {
+    availableTerminals.forEach(function (t) {
       if (!t.available) return;
       var sel = t.id === savedTerminal ? ' selected' : '';
       html += '<option value="' + t.id + '"' + sel + '>' + escHtml(t.name) + '</option>';
@@ -2643,7 +2116,7 @@ function renderSettings(container) {
   html += '<div class="settings-group">';
   html += '<label class="settings-label">Grouping</label>';
   html += '<div class="settings-theme-btns">';
-  ['folder', 'repo'].forEach(function(mode) {
+  ['folder', 'repo'].forEach(function (mode) {
     var active = savedGroupingMode === mode ? ' active' : '';
     var label = mode === 'repo' ? 'Repository' : 'Folder';
     html += '<button class="theme-btn' + active + '" onclick="saveGroupingMode(\'' + mode + '\')">' + label + '</button>';
@@ -2674,281 +2147,7 @@ function renderSettings(container) {
   loadLLMSettings();
 }
 
-async function syncLeaderboard() {
-  var btn = document.getElementById('syncBtn');
-  if (btn) btn.textContent = 'Syncing...';
-  try {
-    var resp = await fetch('/api/leaderboard/sync', { method: 'POST' });
-    var data = await resp.json();
-    if (data.ok) {
-      showToast('Stats synced to global leaderboard!');
-      loadGlobalLeaderboard();
-    } else {
-      showToast('Sync failed: ' + (data.error || 'unknown'));
-    }
-  } catch (e) { showToast('Sync error: ' + e.message); }
-  if (btn) btn.textContent = 'Sync to Global Leaderboard';
-}
-
-var _lbRemoteData = null;
-var _lbCurrentTab = 'today';
-
-function switchLbTab(tab, btn) {
-  _lbCurrentTab = tab;
-  document.querySelectorAll('.lb-tab').forEach(function(t) { t.classList.remove('active'); });
-  if (btn) btn.classList.add('active');
-  renderGlobalBoard();
-}
-
-function renderGlobalBoard() {
-  var board = document.getElementById('globalBoard');
-  if (!board || !_lbRemoteData) return;
-  var data = _lbRemoteData;
-  if (!data.users || data.users.length === 0) {
-    board.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">No one here yet. Sync your stats to be first!</div>';
-    return;
-  }
-
-  // Sort by tab
-  var sorted = data.users.slice();
-  if (_lbCurrentTab === 'today') {
-    sorted.sort(function(a,b) { return (b.stats?.today?.messages||0) - (a.stats?.today?.messages||0); });
-  } else if (_lbCurrentTab === 'week') {
-    sorted.sort(function(a,b) { return (b.stats?.week?.messages||0) - (a.stats?.week?.messages||0); });
-  } else {
-    sorted.sort(function(a,b) { return (b.stats?.totals?.messages||0) - (a.stats?.totals?.messages||0); });
-  }
-
-  var html = '';
-  sorted.forEach(function(u, i) {
-    var t = u.stats?.today || {};
-    var w = u.stats?.week || {};
-    var tot = u.stats?.totals || {};
-
-    // Pick values based on tab
-    var msgs, hours, cost, label;
-    if (_lbCurrentTab === 'today') { msgs = t.messages||0; hours = t.hours||0; cost = t.cost||0; label = 'today'; }
-    else if (_lbCurrentTab === 'week') { msgs = w.messages||0; hours = w.hours||0; cost = w.cost||0; label = 'this week'; }
-    else { msgs = tot.messages||0; hours = tot.hours||0; cost = tot.cost||0; label = 'all time'; }
-
-    html += '<div class="lb-global-row">';
-    html += '<span class="lb-rank' + (i < 3 ? ' lb-rank-' + (i+1) : '') + '">#' + (i+1) + '</span>';
-    html += '<img class="lb-global-avatar" src="' + escHtml(u.avatar || '') + '" alt="">';
-    html += '<div class="lb-global-info">';
-    html += '<div class="lb-global-name"><a href="https://github.com/' + escHtml(u.username) + '" target="_blank">' + escHtml(u.name || u.username) + '</a>';
-    if (u.verified) html += ' <span class="lb-verified">&#10003;</span>';
-    html += '</div>';
-    html += '<div class="lb-global-handle"><a href="https://github.com/' + escHtml(u.username) + '" target="_blank" style="color:var(--text-muted);text-decoration:none">@' + escHtml(u.username) + '</a>';
-    if (u.deviceCount > 1) html += ' <span class="lb-devices">' + u.deviceCount + ' devices</span>';
-    html += '</div>';
-    // Top agents
-    var agents = Object.entries(u.stats?.agents || {}).sort(function(a,b){return b[1]-a[1]}).slice(0,3);
-    if (agents.length) {
-      html += '<div class="lb-global-agents">';
-      agents.forEach(function(a) { html += '<span class="lb-agent-mini tool-' + a[0] + '">' + a[0] + '</span>'; });
-      html += '</div>';
-    }
-    html += '</div>';
-    html += '<div class="lb-global-stats">';
-    html += '<span title="Prompts ' + label + '"><strong>' + msgs.toLocaleString() + '</strong> prompts</span>';
-    html += '<span title="Agent hours ' + label + '"><strong>' + hours.toFixed(1) + 'h</strong> coded</span>';
-    html += '<span title="API cost ' + label + '"><strong>$' + cost.toFixed(0) + '</strong> spent</span>';
-    if (u.stats?.streak > 1) html += '<span class="lb-streak-badge" title="Coding streak — days in a row with activity">&#128293; ' + u.stats.streak + 'd streak</span>';
-    html += '</div></div>';
-  });
-  board.innerHTML = html;
-}
-
-async function loadGlobalLeaderboard() {
-  var board = document.getElementById('globalBoard');
-  if (!board) return;
-  try {
-    var resp = await fetch('/api/leaderboard/remote');
-    _lbRemoteData = await resp.json();
-    // Show network stats
-    var net = _lbRemoteData.network || {};
-    var netEl = document.getElementById('networkStats');
-    if (netEl) {
-      netEl.innerHTML = '<span>' + (_lbRemoteData.totalUsers || 0) + ' on leaderboard</span>' +
-        '<span>' + (net.totalInstalls || 0) + ' vibe coders online</span>' +
-        '<span>' + (net.todayActive || 0) + ' active today</span>';
-    }
-    renderGlobalBoard();
-  } catch { if (board) board.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Could not load global leaderboard</div>'; }
-}
-
-async function githubConnect() {
-  try {
-    showToast('Starting GitHub auth...');
-    var resp = await fetch('/api/github/device-code', { method: 'POST' });
-    var data = await resp.json();
-    if (data.error) { showToast('Error: ' + data.error); return; }
-
-    // Show modal with code
-    var modal = document.getElementById('githubAuthModal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'githubAuthModal';
-      modal.className = 'confirm-overlay';
-      modal.style.display = 'flex';
-      modal.innerHTML = '<div class="confirm-box" style="max-width:380px;text-align:center">' +
-        '<h3>Connect GitHub</h3>' +
-        '<p style="font-size:13px;margin:12px 0">Copy this code and enter it at:</p>' +
-        '<div class="lb-auth-code" id="githubAuthCode"></div>' +
-        '<a id="githubAuthLink" href="" target="_blank" class="lb-github-btn" style="display:inline-flex;margin:12px 0">Open GitHub</a>' +
-        '<p style="font-size:12px;color:var(--text-muted)" id="githubAuthStatus">Waiting for authorization...</p>' +
-        '<button class="btn-cancel" onclick="this.parentElement.parentElement.style.display=\'none\'" style="margin-top:8px">Cancel</button>' +
-        '</div>';
-      document.body.appendChild(modal);
-    } else {
-      modal.style.display = 'flex';
-    }
-    document.getElementById('githubAuthCode').textContent = data.user_code;
-    document.getElementById('githubAuthLink').href = data.verification_uri;
-
-    // Copy code to clipboard
-    try { navigator.clipboard.writeText(data.user_code); } catch {}
-
-    // Poll for token
-    var interval = (data.interval || 5) * 1000;
-    var maxTries = Math.ceil((data.expires_in || 900) / (interval / 1000));
-    for (var i = 0; i < maxTries; i++) {
-      await new Promise(function(r) { setTimeout(r, interval); });
-      if (modal.style.display === 'none') return; // cancelled
-      try {
-        var pollResp = await fetch('/api/github/poll-token', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ device_code: data.device_code })
-        });
-        var pollData = await pollResp.json();
-        if (pollData.status === 'ok') {
-          modal.style.display = 'none';
-          showToast('Connected as @' + pollData.profile.username);
-          render();
-          return;
-        } else if (pollData.status === 'expired') {
-          document.getElementById('githubAuthStatus').textContent = 'Code expired. Try again.';
-          return;
-        }
-      } catch {}
-    }
-  } catch (e) { showToast('Auth error: ' + e.message); }
-}
-
-async function githubLogout() {
-  await fetch('/api/github/logout', { method: 'POST' });
-  showToast('GitHub disconnected');
-  render();
-}
-
-async function renderLeaderboard(container) {
-  container.innerHTML = '<div class="loading">Loading stats...</div>';
-  try {
-    var resp = await fetch('/api/leaderboard');
-    var data = await resp.json();
-    var ghResp = await fetch('/api/github/profile');
-    var gh = await ghResp.json();
-
-    var html = '<div class="leaderboard-container">';
-
-    // Header card — GitHub profile or anonymous
-    html += '<div class="lb-hero">';
-    if (gh.authenticated) {
-      html += '<img class="lb-avatar-img" src="' + escHtml(gh.avatar) + '" alt="">';
-      html += '<div class="lb-hero-info">';
-      html += '<div class="lb-name">' + escHtml(gh.name || gh.username) + '</div>';
-      html += '<div class="lb-username">@' + escHtml(gh.username) + '</div>';
-      html += '<div class="lb-streak">&#128293; ' + data.streak + ' day streak — coding days in a row</div>';
-      html += '</div>';
-      html += '<button class="toolbar-btn" style="margin-left:auto;font-size:11px" onclick="githubLogout()">Disconnect</button>';
-    } else {
-      html += '<div class="lb-avatar">' + escHtml(data.anon.name.split('-').map(function(w){return w[0].toUpperCase()}).join('')) + '</div>';
-      html += '<div class="lb-hero-info">';
-      html += '<div class="lb-name">' + escHtml(data.anon.name) + '</div>';
-      html += '<div class="lb-streak">&#128293; ' + data.streak + ' day streak — coding days in a row</div>';
-      html += '</div>';
-      html += '<button class="lb-github-btn" onclick="githubConnect()"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg> Connect GitHub</button>';
-    }
-    html += '</div>';
-
-    // Today stats
-    html += '<div class="lb-section-title">Today</div>';
-    html += '<div class="lb-stats-grid">';
-    html += '<div class="lb-stat"><div class="lb-stat-value">' + data.today.messages + '</div><div class="lb-stat-label">prompts</div></div>';
-    html += '<div class="lb-stat"><div class="lb-stat-value">' + data.today.hours.toFixed(1) + 'h</div><div class="lb-stat-label">agent time</div></div>';
-    html += '<div class="lb-stat"><div class="lb-stat-value">' + data.today.sessions + '</div><div class="lb-stat-label">sessions</div></div>';
-    html += '<div class="lb-stat"><div class="lb-stat-value">$' + data.today.cost.toFixed(2) + '</div><div class="lb-stat-label">cost</div></div>';
-    html += '</div>';
-
-    // All time
-    html += '<div class="lb-section-title">All Time</div>';
-    html += '<div class="lb-stats-grid">';
-    html += '<div class="lb-stat"><div class="lb-stat-value">' + data.totals.messages.toLocaleString() + '</div><div class="lb-stat-label">prompts</div></div>';
-    html += '<div class="lb-stat"><div class="lb-stat-value">' + data.totals.hours.toFixed(0) + 'h</div><div class="lb-stat-label">agent time</div></div>';
-    html += '<div class="lb-stat"><div class="lb-stat-value">' + data.totals.sessions + '</div><div class="lb-stat-label">sessions</div></div>';
-    html += '<div class="lb-stat"><div class="lb-stat-value">$' + data.totals.cost.toFixed(2) + '</div><div class="lb-stat-label">cost</div></div>';
-    html += '</div>';
-
-    // Agents breakdown
-    html += '<div class="lb-section-title">Agents</div>';
-    html += '<div class="lb-agents">';
-    var agentEntries = Object.entries(data.agents).sort(function(a,b){return b[1]-a[1]});
-    agentEntries.forEach(function(e) {
-      var pct = data.totals.sessions > 0 ? Math.round(e[1] / data.totals.sessions * 100) : 0;
-      html += '<div class="lb-agent-row">';
-      html += '<span class="tool-badge tool-' + e[0] + '">' + escHtml(e[0]) + '</span>';
-      html += '<div class="lb-agent-bar"><div class="lb-agent-bar-fill" style="width:' + pct + '%"></div></div>';
-      html += '<span class="lb-agent-count">' + e[1] + ' (' + pct + '%)</span>';
-      html += '</div>';
-    });
-    html += '</div>';
-
-    // Daily chart (last 14 days)
-    html += '<div class="lb-section-title">Last 14 Days</div>';
-    html += '<div class="lb-daily-chart">';
-    var last14 = data.daily.slice(0, 14).reverse();
-    var maxMsg = Math.max.apply(null, last14.map(function(d){return d.messages})) || 1;
-    last14.forEach(function(d) {
-      var h = Math.max(4, Math.round(d.messages / maxMsg * 120));
-      var dayLabel = d.date.slice(5); // MM-DD
-      html += '<div class="lb-bar-col">';
-      html += '<div class="lb-bar" style="height:' + h + 'px" title="' + d.date + ': ' + d.messages + ' msgs, ' + d.hours.toFixed(1) + 'h, $' + d.cost.toFixed(2) + '"></div>';
-      html += '<div class="lb-bar-label">' + dayLabel + '</div>';
-      html += '</div>';
-    });
-    html += '</div>';
-
-    // Sync button + Global leaderboard
-    if (gh.authenticated) {
-      html += '<div class="lb-sync-bar">';
-      html += '<button class="lb-sync-btn" onclick="syncLeaderboard()" id="syncBtn">Sync Stats</button>';
-      html += '</div>';
-    }
-
-    // Global leaderboard
-    // Network stats
-    html += '<div class="lb-network" id="networkStats"><span>Loading network...</span></div>';
-
-    // Global leaderboard with tabs
-    html += '<div class="lb-section-title">Global Leaderboard</div>';
-    html += '<div class="lb-tabs">';
-    html += '<button class="lb-tab active" onclick="switchLbTab(\'today\',this)">Today</button>';
-    html += '<button class="lb-tab" onclick="switchLbTab(\'week\',this)">Week</button>';
-    html += '<button class="lb-tab" onclick="switchLbTab(\'alltime\',this)">All Time</button>';
-    html += '</div>';
-    html += '<div id="globalBoard"><div class="loading">Loading...</div></div>';
-
-    html += '<div class="lb-footer">Active days: ' + data.activeDays + ' | <a href="https://codedash-leaderboard.valeriy.workers.dev" target="_blank" style="color:var(--accent-blue)">View public leaderboard</a></div>';
-    html += '</div>';
-
-    container.innerHTML = html;
-
-    // Load global leaderboard async
-    loadGlobalLeaderboard();
-  } catch (e) {
-    container.innerHTML = '<div class="empty-state">Failed to load stats: ' + escHtml(e.message) + '</div>';
-  }
-}
+// → moved to leaderboard.js
 
 async function renderChangelog(container) {
   container.innerHTML = '<div class="loading">Loading changelog...</div>';
@@ -2959,7 +2158,7 @@ async function renderChangelog(container) {
     var html = '<div class="changelog-container">';
     html += '<h2 class="heatmap-title">Changelog</h2>';
 
-    log.forEach(function(entry, i) {
+    log.forEach(function (entry, i) {
       var isNew = i === 0;
       html += '<div class="changelog-entry' + (isNew ? ' changelog-latest' : '') + '">';
       html += '<div class="changelog-header">';
@@ -2969,7 +2168,7 @@ async function renderChangelog(container) {
       html += '</div>';
       html += '<div class="changelog-title">' + escHtml(entry.title) + '</div>';
       html += '<ul class="changelog-list">';
-      entry.changes.forEach(function(c) {
+      entry.changes.forEach(function (c) {
         html += '<li>' + escHtml(c) + '</li>';
       });
       html += '</ul></div>';
@@ -3015,10 +2214,10 @@ function openInCursor(project) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ide: 'cursor', project: project })
-  }).then(function(r) { return r.json(); }).then(function(data) {
+  }).then(function (r) { return r.json(); }).then(function (data) {
     if (data.ok) showToast('Opening project in Cursor...');
     else showToast('Failed: ' + (data.error || 'unknown'));
-  }).catch(function() { showToast('Failed to open Cursor'); });
+  }).catch(function () { showToast('Failed to open Cursor'); });
 }
 
 // ── Handoff ───────────────────────────────────────────────────
@@ -3071,7 +2270,7 @@ function installAgent(agent) {
   document.getElementById('confirmId').textContent = '';
   document.getElementById('confirmAction').textContent = 'Copy Install Command';
   document.getElementById('confirmAction').className = 'launch-btn btn-primary';
-  document.getElementById('confirmAction').onclick = function() {
+  document.getElementById('confirmAction').onclick = function () {
     copyText(info.cmd, 'Copied: ' + info.cmd);
     closeConfirm();
   };
@@ -3093,7 +2292,7 @@ function showExportDialog() {
   document.getElementById('confirmId').textContent = '';
   document.getElementById('confirmAction').textContent = 'Copy Export Command';
   document.getElementById('confirmAction').className = 'launch-btn btn-primary';
-  document.getElementById('confirmAction').onclick = function() {
+  document.getElementById('confirmAction').onclick = function () {
     copyText('codedash export', 'Copied: codedash export');
     closeConfirm();
   };
@@ -3124,7 +2323,7 @@ async function checkForUpdates() {
         badge.textContent = 'v' + data.current + ' → v' + data.latest;
         badge.classList.add('update-available');
         badge.title = 'Click to copy update command';
-        badge.onclick = function() {
+        badge.onclick = function () {
           copyText('npm i -g codedash-app@latest', 'Copied: npm i -g codedash-app@latest');
         };
       }
@@ -3136,7 +2335,7 @@ async function checkForUpdates() {
         banner.dataset.cmd = 'npm i -g codedash-app@latest';
       }
     }
-  } catch {}
+  } catch { }
 }
 
 function copyUpdate() {
@@ -3174,3 +2373,5 @@ function dismissUpdate() {
   var aiToggle = document.getElementById('aiTitlesToggle');
   if (aiToggle) aiToggle.checked = showAITitles;
 })();
+
+// → moved to cloud.js

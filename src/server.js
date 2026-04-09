@@ -397,6 +397,11 @@ function startServer(host, port, openBrowser = true) {
       json(res, { ok: true });
     }
 
+    // ── Cloud Sync Proxy ─────────────────────
+    else if (pathname.startsWith('/api/cloud/')) {
+      handleCloudProxy(req, res, pathname).catch(e => json(res, { error: e.message }, 500));
+    }
+
     // ── Changelog ─────────────────────────────
     else if (req.method === 'GET' && pathname === '/api/changelog') {
       json(res, CHANGELOG);
@@ -461,7 +466,7 @@ function sendHeartbeat() {
     });
 
     const req = https.request({
-      hostname: 'codedash-leaderboard.valeriy.workers.dev',
+      hostname: 'leaderboard.neuraldeep.ru',
       path: '/api/heartbeat', method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
       timeout: 5000,
@@ -480,6 +485,266 @@ function autoSync() {
       log('SYNC', 'Auto-sync OK');
     }).catch(() => {});
   } catch {}
+}
+
+// ── Cloud Sync Proxy ────────────────────────
+const { serializeSession, encryptSession, decryptSession, deserializeSession, loadCloudKey, saveCloudKey, cloudRequest: cloudApiRequest, deriveKey, encrypt, decrypt, CLOUD_API } = require('./cloud');
+const crypto = require('crypto');
+
+// Cached encryption key (in-memory, survives until server restart)
+let _cachedCloudKey = null;
+
+function getCloudKey() {
+  if (_cachedCloudKey) return _cachedCloudKey;
+  return null;
+}
+
+function unlockCloudKey(passphrase) {
+  const keyData = loadCloudKey();
+  if (!keyData || !keyData.salt) return { error: 'Run "codedash cloud setup" in terminal first' };
+
+  const salt = Buffer.from(keyData.salt, 'hex');
+  const key = deriveKey(passphrase, salt);
+
+  // Verify passphrase
+  try {
+    const dec = decrypt(Buffer.from(keyData.verifier, 'hex'), key);
+    if (dec.toString() !== 'codedash-verify') return { error: 'Wrong passphrase' };
+  } catch {
+    return { error: 'Wrong passphrase' };
+  }
+
+  _cachedCloudKey = key;
+  return { ok: true };
+}
+
+async function handleCloudProxy(req, res, pathname) {
+  const profile = loadGitHubProfile();
+  if (!profile || !profile.authenticated) {
+    log('CLOUD', `${req.method} ${pathname} → 401 not authenticated`);
+    return json(res, { error: 'Connect GitHub first' }, 401);
+  }
+
+  // POST /api/cloud/setup — create passphrase (first time) or re-enter on new device
+  if (req.method === 'POST' && pathname === '/api/cloud/setup') {
+    return new Promise((resolve) => {
+      readBody(req, async (body) => {
+        try {
+          const { passphrase } = JSON.parse(body);
+          if (!passphrase || passphrase.length < 4) {
+            log('CLOUD', 'setup: passphrase too short');
+            json(res, { error: 'Passphrase too short (min 4 chars)' }, 400); return resolve();
+          }
+
+          const existing = loadCloudKey();
+          if (existing && existing.salt) {
+            log('CLOUD', 'setup: local key exists, unlocking...');
+            const result = unlockCloudKey(passphrase);
+            log('CLOUD', `setup unlock: ${result.error ? 'FAIL ' + result.error : 'OK'}`);
+            json(res, result.error ? result : { ok: true }, result.error ? 400 : 200);
+            return resolve();
+          }
+
+          // Check if server has a salt from another device
+          log('CLOUD', 'setup: checking server for existing salt...');
+          const verifyRes = await cloudApiRequest('POST', '/api/auth/verify', profile.token);
+          const serverSalt = verifyRes.status === 200 ? verifyRes.data?.user?.encryption_salt : null;
+
+          let salt;
+          if (serverSalt) {
+            log('CLOUD', 'setup: using salt from another device');
+            salt = Buffer.from(serverSalt, 'hex');
+          } else {
+            log('CLOUD', 'setup: first device, generating new salt');
+            salt = crypto.randomBytes(16);
+            await cloudApiRequest('PUT', '/api/auth/salt', profile.token, JSON.stringify({ salt: salt.toString('hex') }));
+          }
+
+          const key = deriveKey(passphrase, salt);
+          const verifier = encrypt(Buffer.from('codedash-verify'), key);
+          saveCloudKey({ salt: salt.toString('hex'), verifier: verifier.toString('hex') });
+
+          _cachedCloudKey = key;
+          log('CLOUD', `setup: OK (new=${!serverSalt})`);
+          json(res, { ok: true, isNew: !serverSalt });
+          resolve();
+        } catch (e) {
+          log('ERROR', `cloud setup: ${e.message}`);
+          json(res, { error: e.message }, 500); resolve();
+        }
+      });
+    });
+  }
+
+  // POST /api/cloud/lock — clear cached key
+  if (req.method === 'POST' && pathname === '/api/cloud/lock') {
+    _cachedCloudKey = null;
+    log('CLOUD', 'locked (key cleared)');
+    json(res, { ok: true });
+    return;
+  }
+
+  // POST /api/cloud/unlock — cache encryption key from passphrase
+  if (req.method === 'POST' && pathname === '/api/cloud/unlock') {
+    return new Promise((resolve) => {
+      readBody(req, (body) => {
+        try {
+          const { passphrase } = JSON.parse(body);
+          if (!passphrase) { json(res, { error: 'passphrase required' }, 400); return resolve(); }
+          const result = unlockCloudKey(passphrase);
+          log('CLOUD', `unlock: ${result.error ? 'FAIL ' + result.error : 'OK'}`);
+          if (result.error) { json(res, result, 400); return resolve(); }
+          json(res, { ok: true });
+          resolve();
+        } catch (e) {
+          log('ERROR', `cloud unlock: ${e.message}`);
+          json(res, { error: e.message }, 500); resolve();
+        }
+      });
+    });
+  }
+
+  // GET /api/cloud/locked — check if key is cached
+  if (req.method === 'GET' && pathname === '/api/cloud/locked') {
+    const keyData = loadCloudKey();
+    const localConfigured = !!(keyData && keyData.salt);
+
+    // Also check if server has a salt (another device set it up)
+    let serverHasSalt = false;
+    if (!localConfigured) {
+      try {
+        const verifyRes = await cloudApiRequest('POST', '/api/auth/verify', profile.token);
+        serverHasSalt = !!(verifyRes.status === 200 && verifyRes.data?.user?.encryption_salt);
+      } catch {}
+    }
+
+    json(res, {
+      configured: localConfigured,
+      serverHasSalt: serverHasSalt,
+      unlocked: !!_cachedCloudKey,
+    });
+    return;
+  }
+
+  // POST /api/cloud/push — encrypt and upload session
+  if (req.method === 'POST' && pathname === '/api/cloud/push') {
+    return new Promise((resolve) => {
+      readBody(req, async (body) => {
+        try {
+          const { sessionId, project } = JSON.parse(body);
+          if (!sessionId) { json(res, { error: 'sessionId required' }, 400); return resolve(); }
+
+          const key = getCloudKey();
+          if (!key) {
+            log('CLOUD', `push ${sessionId.slice(0,8)}: LOCKED`);
+            json(res, { error: 'Cloud locked. Enter passphrase first.' }, 403); return resolve();
+          }
+
+          log('CLOUD', `push ${sessionId.slice(0,8)}: serializing...`);
+          const sessions = loadSessions();
+          const canonical = serializeSession(sessionId, sessions);
+          if (!canonical) {
+            log('CLOUD', `push ${sessionId.slice(0,8)}: session not found`);
+            json(res, { error: 'Session not found locally' }, 404); return resolve();
+          }
+
+          const blob = encryptSession(canonical, key);
+          const checksum = crypto.createHash('sha256').update(blob).digest('hex');
+          log('CLOUD', `push ${sessionId.slice(0,8)}: ${canonical.agent} ${canonical.messageCount}msgs ${(blob.length/1024).toFixed(0)}KB → uploading...`);
+
+          const result = await cloudApiRequest('POST', '/api/sessions/upload', profile.token, blob, {
+            'Content-Type': 'application/octet-stream',
+            'X-Session-Id': sessionId,
+            'X-Agent': canonical.agent,
+            'X-Project-Short': encodeURIComponent(canonical.projectShort || ''),
+            'X-First-Message': encodeURIComponent((canonical.firstMessage || '').slice(0, 200)),
+            'X-First-Ts': String(canonical.firstTs || 0),
+            'X-Last-Ts': String(canonical.lastTs || 0),
+            'X-Message-Count': String(canonical.messageCount || 0),
+            'X-Checksum': checksum,
+          });
+
+          if (result.status === 200) {
+            log('CLOUD', `push ${sessionId.slice(0,8)}: OK (${(blob.length/1024).toFixed(0)}KB)`);
+            json(res, { ok: true, size: blob.length });
+          } else {
+            log('CLOUD', `push ${sessionId.slice(0,8)}: FAIL ${result.status} ${JSON.stringify(result.data).slice(0,200)}`);
+            json(res, result.data || { error: 'Upload failed' }, result.status);
+          }
+          resolve();
+        } catch (e) {
+          log('ERROR', `cloud push: ${e.message}`);
+          json(res, { error: e.message }, 500); resolve();
+        }
+      });
+    });
+  }
+
+  // POST /api/cloud/pull — download and decrypt session
+  if (req.method === 'POST' && pathname === '/api/cloud/pull') {
+    return new Promise((resolve) => {
+      readBody(req, async (body) => {
+        try {
+          const { sessionId } = JSON.parse(body);
+          if (!sessionId) { json(res, { error: 'sessionId required' }, 400); return resolve(); }
+
+          const key = getCloudKey();
+          if (!key) {
+            log('CLOUD', `pull ${sessionId.slice(0,12)}: LOCKED`);
+            json(res, { error: 'Cloud locked. Enter passphrase first.' }, 403); return resolve();
+          }
+
+          log('CLOUD', `pull ${sessionId.slice(0,12)}: downloading...`);
+          const dlRes = await cloudApiRequest('GET', `/api/sessions/${encodeURIComponent(sessionId)}/download`, profile.token);
+          if (dlRes.status !== 200) {
+            log('CLOUD', `pull ${sessionId.slice(0,12)}: download FAIL ${dlRes.status}`);
+            json(res, { error: 'Download failed' }, dlRes.status); return resolve();
+          }
+
+          log('CLOUD', `pull ${sessionId.slice(0,12)}: decrypting ${(dlRes.data.length/1024).toFixed(0)}KB...`);
+          const canonical = decryptSession(dlRes.data, key);
+          const result = deserializeSession(canonical);
+          log('CLOUD', `pull ${sessionId.slice(0,12)}: ${result.skipped ? 'SKIPPED (exists)' : 'OK → ' + (result.file || '').slice(-40)}`);
+          json(res, { ok: true, ...result });
+          resolve();
+        } catch (e) {
+          log('ERROR', `cloud pull: ${e.message}`);
+          json(res, { error: e.message }, 500); resolve();
+        }
+      });
+    });
+  }
+
+  // GET /api/cloud/list — proxy to cloud server
+  if (req.method === 'GET' && pathname === '/api/cloud/list') {
+    log('CLOUD', 'list: fetching from cloud server...');
+    const result = await cloudApiRequest('GET', '/api/sessions?limit=500', profile.token);
+    log('CLOUD', `list: ${result.status === 200 ? (result.data?.sessions?.length || 0) + ' sessions' : 'FAIL ' + result.status}`);
+    json(res, result.data, result.status);
+    return;
+  }
+
+  // GET /api/cloud/status — proxy stats
+  if (req.method === 'GET' && pathname === '/api/cloud/status') {
+    const result = await cloudApiRequest('GET', '/api/sessions/stats', profile.token);
+    log('CLOUD', `status: ${result.status === 200 ? JSON.stringify(result.data).slice(0,100) : 'FAIL ' + result.status}`);
+    json(res, result.data, result.status);
+    return;
+  }
+
+  // DELETE /api/cloud/:id
+  const deleteMatch = pathname.match(/^\/api\/cloud\/([^/]+)$/);
+  if (req.method === 'DELETE' && deleteMatch) {
+    const sid = decodeURIComponent(deleteMatch[1]);
+    log('CLOUD', `delete ${sid.slice(0,12)}...`);
+    const result = await cloudApiRequest('DELETE', `/api/sessions/${encodeURIComponent(sid)}`, profile.token);
+    log('CLOUD', `delete ${sid.slice(0,12)}: ${result.status === 200 ? 'OK' : 'FAIL ' + result.status}`);
+    json(res, result.data, result.status);
+    return;
+  }
+
+  log('CLOUD', `unknown endpoint: ${req.method} ${pathname}`);
+  json(res, { error: 'Unknown cloud endpoint' }, 404);
 }
 
 // ── Helpers ─────────────────────────────────
@@ -628,7 +893,7 @@ function saveGitHubProfile(profile) {
 }
 
 // ── Leaderboard Sync ──────────────────────
-const LEADERBOARD_API = 'https://codedash-leaderboard.valeriy.workers.dev';
+const LEADERBOARD_API = 'https://leaderboard.neuraldeep.ru';
 
 async function syncLeaderboard() {
   const profile = loadGitHubProfile();
@@ -636,12 +901,23 @@ async function syncLeaderboard() {
 
   const stats = getLeaderboardStats();
   const anon = stats.anon || {};
+  // Build integrity fingerprint: SHA-256(version + data.js header)
+  const pkg = require('../package.json');
+  let integrity = '';
+  try {
+    const dataJsPath = require('path').join(__dirname, 'data.js');
+    const header = require('fs').readFileSync(dataJsPath, 'utf8').slice(0, 200);
+    integrity = require('crypto').createHash('sha256').update(pkg.version + header).digest('hex').slice(0, 16);
+  } catch {}
+
   const payload = {
     username: profile.username,
     avatar: profile.avatar,
     name: profile.name,
     deviceId: anon.id || require('crypto').randomUUID(),
     token: profile.token, // for server-side GitHub verification
+    version: pkg.version,
+    integrity: integrity,
     stats: {
       today: { ...stats.today, hours: Math.min(stats.today.hours || 0, 24) },
       week: stats.daily ? stats.daily.slice(0, 7).reduce((acc, d) => ({ messages: acc.messages + d.messages, hours: acc.hours + d.hours, cost: acc.cost + d.cost }), { messages: 0, hours: 0, cost: 0 }) : { messages: 0, hours: 0, cost: 0 },

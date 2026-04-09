@@ -329,10 +329,11 @@ function scanOpenCodeSessions() {
     const sessionMcp = {};
     const sessionSkills = {};
     try {
-      const toolRows = execSync(
-        `sqlite3 -separator $'\\t' "${OPENCODE_DB}" "SELECT session_id, json_extract(data, '\\$.tool'), json_extract(data, '\\$.state.input.name') FROM part WHERE json_extract(data, '\\$.type') = 'tool'"`,
-        { encoding: 'utf8', timeout: 10000, maxBuffer: 50 * 1024 * 1024 }
-      ).trim();
+      const toolRows = execFileSync('sqlite3', [
+        '-separator', '\t',
+        OPENCODE_DB,
+        "SELECT session_id, json_extract(data, '$.tool'), json_extract(data, '$.state.input.name') FROM part WHERE json_extract(data, '$.type') = 'tool'"
+      ], { encoding: 'utf8', timeout: 10000, maxBuffer: 50 * 1024 * 1024, windowsHide: true }).trim();
       if (toolRows) {
         for (const tr of toolRows.split('\n')) {
           const cols = tr.split('\t');
@@ -1205,7 +1206,40 @@ function getProjectGitInfo(projectPath) {
 
 let _sessionsCache = null;
 let _sessionsCacheTs = 0;
-const SESSIONS_CACHE_TTL = 10000; // 10 seconds
+const SESSIONS_CACHE_TTL = 60000; // 60 seconds — hot cache, invalidated by file changes
+
+// Track file mtimes for smart invalidation
+let _historyMtime = 0;
+let _historySize = 0;
+let _projectsDirMtime = 0;
+
+function _sessionsNeedRescan() {
+  // Check if history.jsonl or projects dir changed since last scan
+  try {
+    if (fs.existsSync(HISTORY_FILE)) {
+      const st = fs.statSync(HISTORY_FILE);
+      if (st.mtimeMs !== _historyMtime || st.size !== _historySize) return true;
+    }
+    if (fs.existsSync(PROJECTS_DIR)) {
+      const st = fs.statSync(PROJECTS_DIR);
+      if (st.mtimeMs !== _projectsDirMtime) return true;
+    }
+  } catch {}
+  return false;
+}
+
+function _updateScanMarkers() {
+  try {
+    if (fs.existsSync(HISTORY_FILE)) {
+      const st = fs.statSync(HISTORY_FILE);
+      _historyMtime = st.mtimeMs;
+      _historySize = st.size;
+    }
+    if (fs.existsSync(PROJECTS_DIR)) {
+      _projectsDirMtime = fs.statSync(PROJECTS_DIR).mtimeMs;
+    }
+  } catch {}
+}
 
 // Progressive loading: cursor vscdb sessions load in background
 let _cursorVscdbSessions = null;
@@ -1340,8 +1374,14 @@ function _loadCursorVscdbInBackground() {
 
 function loadSessions() {
   const now = Date.now();
-  if (_sessionsCache && (now - _sessionsCacheTs) < SESSIONS_CACHE_TTL) {
-    return _sessionsCache;
+  if (_sessionsCache) {
+    // Hot cache: return immediately if within TTL and no file changes
+    if ((now - _sessionsCacheTs) < SESSIONS_CACHE_TTL) return _sessionsCache;
+    // Extended cache: even after TTL, only rescan if files actually changed
+    if (!_sessionsNeedRescan()) {
+      _sessionsCacheTs = now; // extend TTL
+      return _sessionsCache;
+    }
   }
   const sessions = {};
 
@@ -1594,6 +1634,7 @@ function loadSessions() {
   // Flush disk caches
   _saveParsedDiskCache();
   _saveGitRootDiskCache();
+  _updateScanMarkers();
 
   _sessionsCache = result;
   _sessionsCacheTs = Date.now();
@@ -1812,7 +1853,7 @@ function exportSessionMarkdown(sessionId, project) {
 // Session file index: sessionId -> file path (built once, avoids O(sessions*projects) scans)
 let _sessionFileIndex = null;
 let _sessionFileIndexTs = 0;
-const SESSION_FILE_INDEX_TTL = 30000; // 30 seconds
+const SESSION_FILE_INDEX_TTL = 120000; // 2 minutes — dirs rarely change
 
 function _buildSessionFileIndex() {
   const now = Date.now();
@@ -2425,7 +2466,50 @@ function computeSessionCost(sessionId, project) {
 
 // ── Cost analytics ────────────────────────────────────────
 
+// Analytics result cache — avoids recomputing 31k sessions every request
+const ANALYTICS_CACHE_FILE = path.join(os.tmpdir(), 'codedash-analytics-cache.json');
+let _analyticsCacheResult = null;
+let _analyticsCacheKey = null;
+
+function _analyticsKey(sessions) {
+  // Key: session count + newest session mtime
+  let newest = 0;
+  for (const s of sessions) {
+    if (s.last_ts > newest) newest = s.last_ts;
+  }
+  return sessions.length + ':' + newest;
+}
+
 function getCostAnalytics(sessions) {
+  // Fast cache check — if sessions haven't changed, return cached result
+  const key = _analyticsKey(sessions);
+  if (_analyticsCacheResult && _analyticsCacheKey === key) return _analyticsCacheResult;
+
+  // Try disk cache
+  if (!_analyticsCacheResult) {
+    try {
+      if (fs.existsSync(ANALYTICS_CACHE_FILE)) {
+        const cached = JSON.parse(fs.readFileSync(ANALYTICS_CACHE_FILE, 'utf8'));
+        if (cached._key === key) {
+          _analyticsCacheResult = cached.data;
+          _analyticsCacheKey = key;
+          return cached.data;
+        }
+      }
+    } catch {}
+  }
+
+  const result = _computeCostAnalytics(sessions);
+
+  // Save to cache
+  _analyticsCacheResult = result;
+  _analyticsCacheKey = key;
+  try { fs.writeFileSync(ANALYTICS_CACHE_FILE, JSON.stringify({ _key: key, data: result })); } catch {}
+
+  return result;
+}
+
+function _computeCostAnalytics(sessions) {
   const byDay = {};
   const byProject = {};
   const byWeek = {};
@@ -2607,6 +2691,7 @@ function getCostAnalytics(sessions) {
     lastDate,
     days,
     totalSessions: sessionsWithData,
+    totalSessionsAll: sessions.length,
     byDay,
     byWeek,
     byProject,
@@ -2640,9 +2725,9 @@ function getActiveSessions() {
 
   // 2. Scan ALL agent processes via ps
   const agentPatterns = [
-    { pattern: 'claude', tool: 'claude', match: /\bclaude\b/ },
-    { pattern: 'codex', tool: 'codex', match: /\bcodex\b/ },
-    { pattern: 'opencode', tool: 'opencode', match: /\bopencode\b/ },
+    { pattern: 'claude', tool: 'claude', match: /\/claude\s|^claude\s|\bclaude\b/ },
+    { pattern: 'codex', tool: 'codex', match: /\/codex\s|^codex\s|codex app-server|\bcodex\b/ },
+    { pattern: 'opencode', tool: 'opencode', match: /\/opencode\s|^opencode\s|\bopencode\b/ },
     { pattern: 'kiro', tool: 'kiro', match: /kiro-cli/ },
     { pattern: 'cursor-agent', tool: 'cursor', match: /cursor-agent/ },
   ];
@@ -2675,8 +2760,12 @@ function getActiveSessions() {
       }
       if (!tool) continue;
 
-      // Skip node/npm/shell wrappers — only main processes
+      // Skip node/npm/shell wrappers, MCP servers, plugins — only main agent processes
       if (cmd.includes('node bin/cli') || cmd.includes('npm') || cmd.includes('grep')) continue;
+      if (cmd.includes('mcp-server') || cmd.includes('mcp_server') || cmd.includes('/mcp/') || cmd.includes('/mcp-servers/')) continue;
+      if (cmd.includes('/plugins/') || cmd.includes('plugin-') || cmd.includes('app-server-broker')) continue;
+      if (cmd.includes('.claude/') && !cmd.includes('claude ') && tool === 'claude') continue;
+      if (cmd.includes('.codex/') && !cmd.includes('codex ') && tool === 'codex') continue;
 
       seenPids.add(pid);
 
@@ -2837,7 +2926,37 @@ function _computeSessionDailyBreakdown(s, found) {
   return { msgsByDay, tsByDay };
 }
 
+// Daily stats result cache
+const DAILY_RESULT_CACHE_FILE = path.join(os.tmpdir(), 'codedash-daily-result-cache.json');
+let _dailyResultCache = null;
+let _dailyResultCacheKey = null;
+
 function getDailyStats(sessions) {
+  const key = _analyticsKey(sessions);
+  if (_dailyResultCache && _dailyResultCacheKey === key) return _dailyResultCache;
+
+  // Try disk cache
+  if (!_dailyResultCache) {
+    try {
+      if (fs.existsSync(DAILY_RESULT_CACHE_FILE)) {
+        const cached = JSON.parse(fs.readFileSync(DAILY_RESULT_CACHE_FILE, 'utf8'));
+        if (cached._key === key) {
+          _dailyResultCache = cached.data;
+          _dailyResultCacheKey = key;
+          return cached.data;
+        }
+      }
+    } catch {}
+  }
+
+  const result = _computeDailyStats(sessions);
+  _dailyResultCache = result;
+  _dailyResultCacheKey = key;
+  try { fs.writeFileSync(DAILY_RESULT_CACHE_FILE, JSON.stringify({ _key: key, data: result })); } catch {}
+  return result;
+}
+
+function _computeDailyStats(sessions) {
   const byDay = {};
   const ensureDay = (date) => {
     if (!byDay[date]) byDay[date] = { date, sessions: 0, messages: 0, hours: 0, cost: 0, agents: {} };
