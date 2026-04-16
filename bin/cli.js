@@ -11,7 +11,7 @@ if (nodeVersion < 18) {
 // One-time migration notice for old binary name
 if (process.argv[1] && process.argv[1].includes('codedash') && !process.argv[1].includes('codbash')) {
   console.log('\n  \x1b[33mNotice:\x1b[0m codedash-app has been renamed to \x1b[1mcodbash\x1b[0m.');
-  console.log('  Install the new package: \x1b[2mnpm i -g codbash\x1b[0m');
+  console.log('  Install the new package: \x1b[2mnpm i -g codbash-app\x1b[0m');
   console.log('  The old binary still works but will be removed in a future version.\n');
 }
 
@@ -258,12 +258,12 @@ switch (command) {
     const { execSync: execU } = require('child_process');
     console.log('\n  \x1b[36m\x1b[1mUpdating codbash...\x1b[0m\n');
     try {
-      execU('npm i -g codbash@latest', { stdio: 'inherit' });
+      execU('npm i -g codbash-app@latest', { stdio: 'inherit' });
       const newPkg = require('../package.json');
       console.log(`\n  \x1b[32mUpdated to v${newPkg.version}!\x1b[0m`);
       console.log('  Run \x1b[2mcodbash restart\x1b[0m to apply.\n');
     } catch (e) {
-      console.error('  \x1b[31mUpdate failed.\x1b[0m Try: npm i -g codbash@latest\n');
+      console.error('  \x1b[31mUpdate failed.\x1b[0m Try: npm i -g codbash-app@latest\n');
     }
     break;
   }

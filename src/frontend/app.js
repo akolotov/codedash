@@ -1856,15 +1856,15 @@ async function checkForUpdates() {
         badge.classList.add('update-available');
         badge.title = 'Click to copy update command';
         badge.onclick = function() {
-          copyText('npm i -g codbash@latest', 'Copied: npm i -g codbash@latest');
+          copyText('npm i -g codbash-app@latest', 'Copied: npm i -g codbash-app@latest');
         };
       }
       var banner = document.getElementById('updateBanner');
       var text = document.getElementById('updateText');
       if (banner && text) {
-        text.textContent = 'v' + data.latest + ' available — run: npm i -g codbash@latest';
+        text.textContent = 'v' + data.latest + ' available — run: npm i -g codbash-app@latest';
         banner.style.display = 'flex';
-        banner.dataset.cmd = 'npm i -g codbash@latest';
+        banner.dataset.cmd = 'npm i -g codbash-app@latest';
       }
     }
   } catch {}
